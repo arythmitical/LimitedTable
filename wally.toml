@@ -1,5 +1,6 @@
 [package]
 name = "arythmitical/limitedtable"
 version = "0.3.0"
+description = "Constructor of tables with size limits. Useful for interpreters, VMs and much more."
 registry = "https://github.com/UpliftGames/wally-index"
 realm = "shared"

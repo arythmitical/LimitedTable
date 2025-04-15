@@ -1,5 +1,5 @@
 {
-  "name": "LimitedTable",
+  "name": "LimitedTable example",
   "tree": {
     "$className": "DataModel",
     "$ignoreUnknownInstances": false,

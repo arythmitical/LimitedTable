@@ -80,7 +80,7 @@ local tableMetatable = {}
 	Reference sizes are calculated correctly.
 ]]
 @native
-local function calculateSize(data: any): number	
+local function calculateSize(data: any): number
 	local type = typeof(data)
 	
 	if type == "nil" then
@@ -122,7 +122,7 @@ end
 	Returns the calculated size of table.
 ]]
 @native
-local function insertTableRecursive(object: LimitedTableLocal, data: { [any]: any }): number	
+local function insertTableRecursive(object: LimitedTableLocal, data: { [any]: any }): number
 	local currentSize = 40
 	for key, value in pairs(data) do
 		currentSize += calculateSize(key) + calculateSize(value) + 16

@@ -2,18 +2,21 @@
 	Constructor of tables with size limits.
 	Useful for interpreters, VMs and much more.
 	
-	Current limitations:
-		1. Improper handling of tables with metatables, leading to
-		2. LimitedTable inside another LimitedTable is not properly handled.
-	
-	Short documentation (also see individual function docs):
-		LimitedTable.new(maxSize: number): LimitedTable - returns a new LimitedTable object.
-			LimitedTable.table - table with size limit (has a metatable, see cloneRaw)
-			LimitedTable:set(key, value, table?): () - table defaults to LimitedTable.table
-			LimitedTable:cloneRaw(table?): table - removes all metatables
+	API summary:
+		LimitedTable.new(maxSize: number): LimitedTable
+			obj.table -- to get values
+			obj:set(key, value, table?): () - table defaults to obj.table
+			obj:cloneRaw(table?): table -- get normal table
 			
-			LimitedTable.maximumSize - can be adjusted dynamically, but be careful.
-			LimitedTable:destroy() - destroys everything possible. make sure to clear up references.
+			obj.maximumSize = 1024000
+			obj:destroy()
+		LimitedTable.isValid(obj)
+	
+	Current limitations:
+		1. table.key = value is not checking limits when value is already set,
+		   use object:set("key", value) instead
+		2. Improper handling of tables with metatables, leading to
+		3. LimitedTable inside another LimitedTable is not properly handled.
 	
 	Examples:
 		creating new object
@@ -46,8 +49,7 @@
 			variablesObject:destroy()
 			variablesObject = nil
 			variables = nil
-]]
---[[
+
 	Copyright (c) 2025 @arythmitic4l
 
 	Permission is hereby granted, free of charge, to any person obtaining a copy of
@@ -69,17 +71,18 @@
 ]]
 
 --!strict
+--!native
 --!optimize 2
--- @native function attribute is used instead of --!native
-
 
 -- used by methods in metatables for referencing LimitedTable by their environments
-local objectsDictionary = setmetatable({} :: {
-	[LimitedTableTable]: LimitedTable?,
-}, {
-	__mode = "kv" -- when objects are not referenced anywhere, they should get obliterated by GC
-})
-
+local objectsDictionary = setmetatable(
+	{} :: {
+		[LimitedTableTable]: LimitedTable?,
+	},
+	{
+		__mode = "kv", -- when objects are not referenced anywhere, they should get obliterated by GC
+	}
+)
 
 -- metatable for LimitedTable.table and tables inside it
 local tableMetatable = {}
@@ -91,7 +94,6 @@ local tableMetatable = {}
 	Handles probably all concrete and builtin types.
 	Not 100% accurate and never will. Lets be honest about that.
 ]]
-@native
 local function calculateSize(data: any): number
 	local type = type(data)
 
@@ -125,36 +127,35 @@ end
 	
 	Returns the calculated size of table.
 ]]
-@native
 local function transformTableRecursive(object: LimitedTable, data: { [any]: any }): number
-	local currentSize = 40 -- header + memory address 
+	local currentSize = 0 -- header is already included from calculateSize()
+
+	setmetatable(data, tableMetatable)
+	objectsDictionary[data] = object
+
 	for key, value in pairs(data) do
 		currentSize += 16 + calculateSize(key) + calculateSize(value) -- each entry takes up 16 bytes no matter what
-		
+
 		if typeof(value) == "table" and objectsDictionary[value] == nil then
 			currentSize += transformTableRecursive(object, value)
 		end
 	end
-	
-	setmetatable(data, tableMetatable)
-	objectsDictionary[data] = object
-	
+
 	return currentSize
 end
 
 --[[
 	Returns a deep copy of "target", with all limited tables replaced by normal ones.
 ]]
-@native
 local function cloneTableRecursive<T>(target: LimitedTableTable, visited: { [LimitedTableTable]: T }): T
 	local cached: T? = visited[target]
-	
+
 	if cached == nil then
 		type RawCloned = typeof(setmetatable(target :: any, nil)) -- typecast into any: deleting metatable
 		local clone: RawCloned = {}
-		
+
 		visited[target] = clone
-		
+
 		for key: any, value: any in pairs(target) do
 			if typeof(value) == "table" and getmetatable(value) == tableMetatable then
 				-- we remove only OUR size listeners
@@ -163,7 +164,7 @@ local function cloneTableRecursive<T>(target: LimitedTableTable, visited: { [Lim
 				clone[key] = value
 			end
 		end
-		
+
 		return clone
 	else
 		return cached
@@ -173,18 +174,17 @@ end
 --[[
 	Traverses over a table, wiping out everything possible.
 ]]
-@native
 local function clearTableRecursive(target: LimitedTable, visited: { LimitedTableTable }?): ()
 	-- objects are END OF LIFE: everything is turned into nil no matter what
 	-- (this is the reason why i'm typecasting into nil here)
-	
+
 	local visited = visited or {}
-	
+
 	if table.find(visited, target) == nil then
 		table.insert(visited, target)
-		
+
 		setmetatable(target :: any, nil)
-		
+
 		for key: any, value: any in pairs(target) do
 			if typeof(value) == "table" then
 				clearTableRecursive(value, visited)
@@ -196,39 +196,43 @@ end
 
 --[[
 	Adjusts _currentSize upon changes.
+	
+	Not stable because __newindex does not fire for entries that already exist.
 ]]
-@native
-function tableMetatable.__newindex(self: LimitedTableTable, key: string, value: any): ()
+function tableMetatable.__newindex(self: LimitedTableTable, key: any, value: any): ()
+	warn(`table.key = value is not stable, use limitedTable:set() instead`)
+
 	-- code is mostly synced with LimitedTable:set()
-	
+
 	local object: LimitedTable? = objectsDictionary[self] -- reference to LimitedTable
-	assert(object, "die idiot") -- SHOULD never happen
-	
+	assert(object) -- here for typechecking issues, could be in a line above
+
 	local currentSize: number = object._currentSize
 	local oldValue: any = self[key]
-	
-	currentSize -= calculateSize(oldValue) -- old size
-	
-	-- new size
+
+	currentSize += calculateSize(value) - calculateSize(oldValue) -- currentSize + delta
+
+	-- entry does not exist if it is nil
 	if oldValue == nil then
-		currentSize += calculateSize(key)
+		currentSize += calculateSize(key) + 16 -- 16 bytes overhead for each entry
+	elseif value == nil then
+		currentSize -= calculateSize(key) + 16 -- 16 bytes overhead for each entry
 	end
-	currentSize += calculateSize(value)
-	
+
 	if typeof(value) == "table" and objectsDictionary[value] == nil then
 		currentSize += transformTableRecursive(object, value)
 	end
-	
+
 	if currentSize > object.maximumSize then
+		-- not using assert for speed and stack level "2"
 		error(`maximum size of {object.maximumSize} bytes reached`, 2)
 	end
-	
+
 	-- table should change only if the size does not exceed
-	
+
 	object._currentSize = currentSize
 	rawset(self :: any, key, value) -- typecasted into any because fuck rawset type definition
 end
-
 
 local LimitedTable = {}
 LimitedTable.__index = LimitedTable
@@ -238,24 +242,23 @@ LimitedTable.__index = LimitedTable
 	When writing a value that exceeds total size, raises an error.
 	
 	For getting, use LimitedTable.table like a normal table.
-	For setting, use LimitedTable:set(). Writing to LimitedTable.table is less performant.
+	For setting, use LimitedTable:set(). Writing to LimitedTable.table is unstable.
 	
 	Example:
 		local env = LimitedTable.new(512000)
 		env.table:set("test", "Hi")
 		env.table.slow = "brrrrrr"
 ]]
-@native
-function LimitedTable.new(maximumSize: number)
+function LimitedTable.new(maximumSize: number): LimitedTable
 	assert(typeof(maximumSize) == "number", "expected maximumSize to be a number")
 	-- hiding metatable use haha very funny
 	local object = setmetatable({}, LimitedTable)
 	object._currentSize = 0
 	object.maximumSize = maximumSize
 	object.table = setmetatable({} :: { [any]: any }, tableMetatable)
-	
+
 	objectsDictionary[object.table] = object
-	
+
 	return object
 end
 
@@ -266,21 +269,20 @@ end
 		print(LimitedTable.isValid(LimitedTable.new(512000))) -- "true"
 		print(LimitedTable.isValid({})) -- "false"
 ]]
-@native
 function LimitedTable.isValid(object: LimitedTable): boolean
 	assert(object, "object not provided")
-	
+
 	if typeof(object) ~= "table" then
 		return false
 	end
-	
+
 	-- typecasted into any because fuck getmetatable type definition
 	local metatable = getmetatable(object :: any)
-	
+
 	if metatable == nil then
 		return false
 	end
-	
+
 	return metatable.__index == LimitedTable
 end
 
@@ -288,7 +290,7 @@ end
 	Sets "key" of given "table" to "value".
 	"table" defaults to self.table
 	
-	Recommended to be used over limitedTable.table[key] = value, as it is much faster than __newindex call.
+	Use over limitedTable.table[key] = value, as the latter is unstable.
 	
 	You can also do LimitedTable.set(obj, ...) to increase speed in repetitive use cases.
 	
@@ -302,23 +304,22 @@ end
 		    "pizza",
 		})
 ]]
-@native
-function LimitedTable:set(key: any, value: any, table: LimitedTableTable?): ()
+function LimitedTable.set(self: LimitedTable, key: any, value: any, table: LimitedTableTable?): ()
 	-- i have chosen to not write as module:namecall() because i define properties
-	
+
 	assert(self, 'must be called via ":" not ".", or provide LimitedTable')
-	
-	local target: LimitedTableTable;
-	
-	if table ~= nil then
+
+	local target: LimitedTableTable
+
+	if table == nil then
+		target = self.table
+	else
 		assert(objectsDictionary[table] == self, "table does not belong to LimitedTable")
 		target = table
-	else
-		target = self.table
 	end
 
 	local currentSize: number = self._currentSize
-	local oldValue: any = self[key]
+	local oldValue: any = target[key]
 
 	currentSize += calculateSize(value) - calculateSize(oldValue) -- currentSize + delta
 
@@ -364,19 +365,18 @@ end
 		print(obj:cloneRaw(obj.table.t))
 		print(obj:cloneRaw(obj.table.r))
 ]]
-@native
-function LimitedTable:cloneRaw(table: LimitedTableTable?): { [any]: any }
+function LimitedTable.cloneRaw(self: LimitedTable, table: LimitedTableTable?): { [any]: any }
 	assert(self, 'must be called via ":" not ".", or provide LimitedTable')
-	
-	local target: LimitedTableTable;
 
-	if table ~= nil then
+	local target: LimitedTableTable
+
+	if table == nil then
+		target = self.table
+	else
 		assert(objectsDictionary[table] == self, "table does not belong to LimitedTable")
 		target = table
-	else
-		target = self.table
 	end
-	
+
 	return cloneTableRecursive(target, {})
 end
 
@@ -399,7 +399,7 @@ end
 		task.wait(2)
 		print(`destroyed: {#references == 0}!`)
 ]]
-function LimitedTable:destroy(): ()
+function LimitedTable.destroy(self: LimitedTable): ()
 	assert(self, 'must be called via ":" not ".", or provide LimitedTable')
 
 	-- i could go through objectsDictionary and use table.clear() but
@@ -410,10 +410,15 @@ function LimitedTable:destroy(): ()
 	-- references from objectsDictionary are auto-removed becase it is a weak table
 end
 
-table.freeze(LimitedTable)
+export type LimitedTable = typeof(setmetatable(
+	{} :: {
+		maximumSize: number,
+		_currentSize: number,
+		table: LimitedTableTable,
+	},
+	LimitedTable
+))
 
--- types are defined down here because of typeof() resolvers
-export type LimitedTable = typeof(LimitedTable.new(0)) -- solely to get the type
 type LimitedTableTable = typeof(setmetatable({} :: { [any]: any }, tableMetatable))
 
-return LimitedTable
+return table.freeze(LimitedTable)

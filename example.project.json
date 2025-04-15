@@ -1,0 +1,17 @@
+{
+  "name": "LimitedTable",
+  "tree": {
+    "$className": "DataModel",
+    "$ignoreUnknownInstances": false,
+    "ReplicatedFirst": {
+      "MyInterpreter": {
+        "$path": "example"
+      }
+    },
+    "ReplicatedStorage": {
+      "LimitedTable": {
+        "$path": "src"
+      }
+    }
+  }
+}

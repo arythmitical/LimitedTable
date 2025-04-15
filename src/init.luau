@@ -247,6 +247,15 @@ end
 function LimitedTable.set(self: LimitedTable, key: any, value: any, table: LimitedTableTable?): ()
 	assert(self, 'must be called via ":" not ".", or provide LimitedTable')
 	local self: LimitedTableLocal = self :: any -- _currentSize access to autocomplete
+	
+	local target;
+	
+	if table ~= nil then
+		assert(objectsDictionary[table] == self, "table does not belong to LimitedTable")
+		target = table
+	else
+		target = self.table
+	end
 
 	local currentSize = self._currentSize
 	local oldValue = self[key]
@@ -270,7 +279,7 @@ function LimitedTable.set(self: LimitedTable, key: any, value: any, table: Limit
 	-- table should change only if the size does not exceed
 
 	self._currentSize = currentSize
-	rawset(self :: any, key, value) -- typecasted into any because fuck rawset type definition
+	rawset(target :: any, key, value) -- typecasted into any because fuck rawset type definition
 end
 
 --[[

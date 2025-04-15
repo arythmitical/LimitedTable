@@ -10,7 +10,7 @@ Add LimitedTable to your dependencies in `wally.toml` file:
 
 ```toml
 [dependencies]
-limitedtable = "arythmitical/limitedtable@1.0.1"
+limitedtable = "arythmitical/limitedtable@1.0.2"
 ```
 
 In shell, run:

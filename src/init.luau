@@ -78,39 +78,34 @@ local tableMetatable = {}
 --[[
 	Calculates the size of "data", without recursing.
 	Reference sizes are calculated correctly.
+	
+	Handles probably all concrete and builtin types.
+	Not 100% accurate and never will. Lets be honest about that.
 ]]
 @native
 local function calculateSize(data: any): number
-	local type = typeof(data)
-	
+	local type = type(data)
+
 	if type == "nil" then
-		return 0
-	elseif type == "boolean" then
-		return 1
+		return 0 -- does not exist at all
+	elseif type == "string" then
+		return string.len(data)
 	elseif type == "number" then
 		return 8 -- 64-bit double-precision floating-point number
-	elseif type == "string" then
-		return string.len(data :: string)
-	elseif type == "buffer" then
-		return buffer.len(data :: buffer)
-	elseif type == "function" then
-		return 16 -- reference size (i think)
+	elseif type == "boolean" then
+		return 1 -- true/false
 	elseif type == "table" then
 		return 40 -- reference size + headers
-	elseif type == "Vector3" then
-		return 24 -- 3 numbers
-	elseif type == "CFrame" then
-		return 96 -- 12 numbers (position + rotation matrix)
-	elseif type == "Color3" then
-		return 12 -- 3 numbers
-	elseif type == "UDim2" then
-		return 32 -- 4 numbers (scales/offsets)
-	elseif type == "Instance" then
-		return 16 -- reference size
+	elseif type == "function" then
+		return 8 -- memory address
 	elseif type == "userdata" then
-		return 16 -- reference size
+		return 16 -- engine reference size, nothing else can be measured
+	elseif type == "vector" then
+		return 24 -- 3 numbers
+	elseif type == "buffer" then
+		return buffer.len(data)
 	else
-		warn(`{type} is not implemented`)
+		warn(`{type} is not supported`) -- shouldn't occur
 		return 0
 	end
 end
@@ -123,9 +118,9 @@ end
 ]]
 @native
 local function insertTableRecursive(object: LimitedTableLocal, data: { [any]: any }): number
-	local currentSize = 40
+	local currentSize = 40 -- header + memory address 
 	for key, value in pairs(data) do
-		currentSize += calculateSize(key) + calculateSize(value) + 16
+		currentSize += 16 + calculateSize(key) + calculateSize(value) -- each entry takes up 16 bytes no matter what
 		
 		if typeof(value) == "table" and objectsDictionary[value] == nil then
 			currentSize += insertTableRecursive(object, value)
@@ -167,7 +162,6 @@ function tableMetatable.__newindex(self: LimitedTableTable, key: string, value: 
 	-- code is mostly synced with LimitedEnv:set()
 	
 	local object = objectsDictionary[self] -- reference to LimitedTable
-	assert(object, "invalid object. did you do something stupid?")
 	
 	local currentSize = object._currentSize
 	local oldValue = self[key]
@@ -216,7 +210,7 @@ function LimitedTable.new(maximumSize: number): LimitedTable
 	
 	objectsDictionary[obj.table] = obj
 	
-	return obj :: any -- for it to be changed to LimitedTable
+	return obj :: any -- LimitedTableLocal -> LimitedTable
 end
 
 --[[
@@ -229,6 +223,7 @@ function LimitedTable.isValid(object: LimitedTable): boolean
 		return false
 	end
 	
+	-- typecasted into any because fuck getmetatable type definition
 	if getmetatable(object :: any) == nil then
 		return false
 	end
@@ -288,12 +283,12 @@ end
 ]]
 function LimitedTable:destroy(): ()
 	assert(self, 'must be called via ":" not ".", or provide LimitedTable')
-	
+
 	-- i could go through objectsDictionary and use table.clear() but
 	-- it will get slower and slower the bigger objectsDictionary becomes
 	clearTableRecursive(self)
-	
-	-- references from objectsDictionary get auto removed becase it is a weak table
+
+	-- references from objectsDictionary are auto-removed becase it is a weak table
 end
 
 table.freeze(LimitedTable)

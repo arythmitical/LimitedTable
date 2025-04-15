@@ -1,6 +1,10 @@
-# VS Code sourcemap
-/sourcemap.json
+# Place files
+/*.rbxl
+/*.rbxlx
 
 # Roblox Studio lock files
 /*.rbxlx.lock
 /*.rbxl.lock
+
+# VS Code sourcemap
+/sourcemap.json

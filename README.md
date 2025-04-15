@@ -16,7 +16,7 @@ limitedtable = "arythmitical/limitedtable@1.0.1"
 In shell, run:
 
 ```bash
-wally update
+wally install
 ```
 
 ### Using Creator Marketplace

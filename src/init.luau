@@ -200,10 +200,7 @@ end
 	Not stable because __newindex does not fire for entries that already exist.
 ]]
 function tableMetatable.__newindex(self: LimitedTableTable, key: any, value: any): ()
-	if typeof(key) ~= "number" then
-		-- the only case where __newindex is permitted is with table.insert and table.remove
-		warn(`table.key = value is not stable, use limitedTable:set() instead`)
-	end
+	warn(`table.key = value is not stable, use inbuilt methods instead`)
 
 	-- code is mostly synced with LimitedTable:set()
 
@@ -295,8 +292,6 @@ end
 	
 	Use over limitedTable.table[key] = value, as the latter is unstable.
 	
-	You can also do LimitedTable.set(obj, ...) to increase speed in repetitive use cases.
-	
 	Example:
 		obj:set("a", "hi")
 		obj:set("myArray", {})
@@ -308,8 +303,6 @@ end
 		})
 ]]
 function LimitedTable.set(self: LimitedTable, key: any, value: any, table: LimitedTableTable?): ()
-	-- i have chosen to not write as module:namecall() because i define properties
-
 	assert(self, 'must be called via ":" not ".", or provide LimitedTable')
 
 	local target: LimitedTableTable
@@ -317,7 +310,10 @@ function LimitedTable.set(self: LimitedTable, key: any, value: any, table: Limit
 	if table == nil then
 		target = self.table
 	else
-		assert(objectsDictionary[table] == self, "table does not belong to LimitedTable")
+		assert(
+			objectsDictionary[table] == self,
+			"table does not belong to LimitedTable, or is not a valid object at all"
+		)
 		target = table
 	end
 
@@ -345,6 +341,93 @@ function LimitedTable.set(self: LimitedTable, key: any, value: any, table: Limit
 
 	self._currentSize = currentSize
 	rawset(target :: any, key, value) -- typecasted into any because rawset type definition is incorrect
+end
+
+--[[
+	Inserts "value" at given "position" of "array".
+	
+	"array" defaults to self.table
+	"position" defaults to the end of the "array"
+	
+	Example:
+		for i = 1, 10 do
+			obj:insert("Hello, world!", "myArray")
+		end
+]]
+function LimitedTable.insert(self: LimitedTable, value: any, array: LimitedTableTable?, position: number?): ()
+	assert(self, 'must be called via ":" not ".", or provide LimitedTable')
+
+	local target: LimitedTableTable
+
+	if array == nil then
+		target = self.table
+	else
+		assert(
+			objectsDictionary[array] == self,
+			"table does not belong to LimitedTable, or is not a valid object at all"
+		)
+		target = array
+	end
+
+	local currentSize: number = self._currentSize
+
+	currentSize += calculateSize(value) + 24 -- value size + key internal + number size
+
+	if typeof(value) == "table" and objectsDictionary[value] == nil then
+		currentSize += transformTableRecursive(self, value)
+	end
+
+	if currentSize > self.maximumSize then
+		error(`maximum size of {self.maximumSize} bytes reached`, 2)
+	end
+
+	-- array should change only if the size does not exceed
+
+	self._currentSize = currentSize
+
+	if not position then
+		table.insert(target :: any, value) -- table.insert bypasses metatables
+	else
+		table.insert(target :: any, position :: any, value)
+	end
+end
+
+--[[
+	Remove entry at given "position" of "array".
+	
+	"array" defaults to self.table
+	"position" defaults to the end of the "array"
+	
+	Example:
+		obj:remove("myArray")
+		obj:remove("myArray, 2")
+]]
+function LimitedTable.remove(self: LimitedTable, array: LimitedTableTable?, position: number?): ()
+	assert(self, 'must be called via ":" not ".", or provide LimitedTable')
+
+	local target: LimitedTableTable
+
+	if array == nil then
+		target = self.table
+	else
+		assert(
+			objectsDictionary[array] == self,
+			"table does not belong to LimitedTable, or is not a valid object at all"
+		)
+		target = array
+	end
+
+	local targetPos = position or #target
+	local targetValue = target[targetPos]
+
+	if targetValue ~= nil then
+		self._currentSize -= calculateSize(targetValue) + 24 -- value size + key internal + number size
+
+		-- size checks are not performed because we are only subtracting current size,
+		-- should not be a problem but if you experience something weird, be aware
+
+		table.remove(target :: any, targetPos) -- table.remove bypasses metatables
+	end
 end
 
 --[[
@@ -376,7 +459,10 @@ function LimitedTable.cloneRaw(self: LimitedTable, table: LimitedTableTable?): {
 	if table == nil then
 		target = self.table
 	else
-		assert(objectsDictionary[table] == self, "table does not belong to LimitedTable")
+		assert(
+			objectsDictionary[table] == self,
+			"table does not belong to LimitedTable, or is not a valid object at all"
+		)
 		target = table
 	end
 

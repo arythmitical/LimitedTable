@@ -74,6 +74,9 @@
 --!native
 --!optimize 2
 
+local LimitedTable = {}
+LimitedTable.__index = LimitedTable
+
 -- used by methods in metatables for referencing LimitedTable by their environments
 local objectsDictionary = setmetatable(
 	{} :: {
@@ -174,19 +177,14 @@ end
 --[[
 	Traverses over a table, wiping out everything possible.
 ]]
-local function clearTableRecursive(target: LimitedTable, visited: { LimitedTableTable }?): ()
-	-- objects are END OF LIFE: everything is turned into nil no matter what
-	-- (this is the reason why i'm typecasting into nil here)
-
-	local visited = visited or {}
-
+local function clearTableRecursive(target: LimitedTableTable, visited: { LimitedTableTable }): ()
 	if table.find(visited, target) == nil then
 		table.insert(visited, target)
 
 		setmetatable(target :: any, nil)
 
 		for key: any, value: any in pairs(target) do
-			if typeof(value) == "table" then
+			if typeof(value) == "table" and getmetatable(value) == tableMetatable then
 				clearTableRecursive(value, visited)
 			end
 			target[key] = nil
@@ -200,12 +198,12 @@ end
 	Not stable because __newindex does not fire for entries that already exist.
 ]]
 function tableMetatable.__newindex(self: LimitedTableTable, key: any, value: any): ()
-	warn(`table.key = value is not stable, use inbuilt methods instead`)
+	warn("writing to table directly is not stable, use limitedTable:set() instead")
 
 	-- code is mostly synced with LimitedTable:set()
 
 	local object: LimitedTable? = objectsDictionary[self] -- reference to LimitedTable
-	assert(object) -- here for typechecking issues, could be in a line above
+	assert(object, "table does not belong to any LimitedTable")
 
 	local currentSize: number = object._currentSize
 	local oldValue: any = self[key]
@@ -233,9 +231,6 @@ function tableMetatable.__newindex(self: LimitedTableTable, key: any, value: any
 	object._currentSize = currentSize
 	rawset(self :: any, key, value) -- typecasted into any because rawset type definition is incorrect
 end
-
-local LimitedTable = {}
-LimitedTable.__index = LimitedTable
 
 --[[
 	Create a new LimitedTable object with given size limit of "maximumSize".
@@ -491,13 +486,15 @@ end
 function LimitedTable.destroy(self: LimitedTable): ()
 	assert(self, 'must be called via ":" not ".", or provide LimitedTable')
 
-	-- i could go through objectsDictionary and use table.clear() but
-	-- it will get slower and slower the bigger objectsDictionary becomes
+	clearTableRecursive(self.table, {})
 
-	clearTableRecursive(self)
+	setmetatable(self :: any, nil)
+	table.clear(self :: any)
 
-	-- references from objectsDictionary are auto-removed becase it is a weak table
+	-- references from objectsDictionary are auto-removed because it is a weak table
 end
+
+type LimitedTableTable = typeof(setmetatable({} :: { [any]: any }, tableMetatable))
 
 export type LimitedTable = typeof(setmetatable(
 	{} :: {
@@ -507,7 +504,5 @@ export type LimitedTable = typeof(setmetatable(
 	},
 	LimitedTable
 ))
-
-type LimitedTableTable = typeof(setmetatable({} :: { [any]: any }, tableMetatable))
 
 return table.freeze(LimitedTable)

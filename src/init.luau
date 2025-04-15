@@ -200,7 +200,10 @@ end
 	Not stable because __newindex does not fire for entries that already exist.
 ]]
 function tableMetatable.__newindex(self: LimitedTableTable, key: any, value: any): ()
-	warn(`table.key = value is not stable, use limitedTable:set() instead`)
+	if typeof(key) ~= "number" then
+		-- the only case where __newindex is permitted is with table.insert and table.remove
+		warn(`table.key = value is not stable, use limitedTable:set() instead`)
+	end
 
 	-- code is mostly synced with LimitedTable:set()
 
@@ -231,7 +234,7 @@ function tableMetatable.__newindex(self: LimitedTableTable, key: any, value: any
 	-- table should change only if the size does not exceed
 
 	object._currentSize = currentSize
-	rawset(self :: any, key, value) -- typecasted into any because fuck rawset type definition
+	rawset(self :: any, key, value) -- typecasted into any because rawset type definition is incorrect
 end
 
 local LimitedTable = {}
@@ -276,7 +279,7 @@ function LimitedTable.isValid(object: LimitedTable): boolean
 		return false
 	end
 
-	-- typecasted into any because fuck getmetatable type definition
+	-- typecasted into any because getmetatable type definition is incorrect
 	local metatable = getmetatable(object :: any)
 
 	if metatable == nil then
@@ -341,7 +344,7 @@ function LimitedTable.set(self: LimitedTable, key: any, value: any, table: Limit
 	-- table should change only if the size does not exceed
 
 	self._currentSize = currentSize
-	rawset(target :: any, key, value) -- typecasted into any because fuck rawset type definition
+	rawset(target :: any, key, value) -- typecasted into any because rawset type definition is incorrect
 end
 
 --[[

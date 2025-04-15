@@ -251,7 +251,7 @@ end
 @native
 function LimitedTable.set(self: LimitedTable, key: any, value: any, table: LimitedTableTable?): ()
 	assert(self, 'must be called via ":" not ".", or provide LimitedTable')
-	local self: LimitedTableLocal = self :: any
+	local self: LimitedTableLocal = self :: any -- _currentSize access to autocomplete
 
 	local currentSize = self._currentSize
 	local oldValue = self[key]

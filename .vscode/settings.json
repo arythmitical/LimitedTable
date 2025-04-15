@@ -1,0 +1,18 @@
+{
+	"luau-lsp.plugin.enabled": true,
+	"luau-lsp.plugin.maximumRequestBodySize": "5mb",
+	"[luau]": {
+		"editor.insertSpaces": false,
+		"editor.defaultFormatter": "JohnnyMorganz.stylua",
+		"editor.formatOnSave": true,
+		"editor.formatOnType": true
+	},
+	"[markdown]": {
+		"editor.insertSpaces": true,
+		"editor.unicodeHighlight.ambiguousCharacters": false,
+		"editor.unicodeHighlight.invisibleCharacters": false,
+	},
+	"luau-lsp.sourcemap.autogenerate": true,
+	"luau-lsp.sourcemap.useVSCodeWatcher": true,
+	"luau-lsp.types.robloxSecurityLevel": "None"
+}

@@ -19,13 +19,13 @@ In shell, run:
 wally update
 ```
 
-### Using .rbxm from GitHub
-
-Download the [latest release file](github.com/arythmitical/LimitedTable/releases) from releases and add it into your project.
-
 ### Using Creator Marketplace
 
 [Creator Marketplace Module](https://create.roblox.com/store/asset/103337933619557)
+
+### Using .rbxm from GitHub
+
+Download the [latest release file](github.com/arythmitical/LimitedTable/releases) from releases and add it into your project.
 
 ## Example
 

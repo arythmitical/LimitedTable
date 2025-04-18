@@ -2,72 +2,8 @@
 	Constructor of tables with size limits.
 	Useful for interpreters, VMs and much more.
 	
-	API summary:
-		LimitedTable.new(maxSize: number): LimitedTable
-			obj.table -- to get values
-			obj:set(key, value, table?): () - table defaults to obj.table
-			obj:cloneRaw(table?): table -- get normal table
-			
-			obj.maximumSize = 1024000
-			obj:destroy()
-		LimitedTable.isValid(obj)
-	
-	Current limitations:
-		1. table.key = value is not checking limits when value is already set,
-		   use object:set("key", value) instead
-		2. Improper handling of tables with metatables, leading to
-		3. LimitedTable inside another LimitedTable is not properly handled.
-	
-	Examples:
-		creating new object
-			local variablesObject = module.new(512000)
-			local variables = variablesObject.table
-
-		interacting with table like a normal one
-			variables.myVariable = "Hello, world!"
-			variables.numbers = 12345678
-			variables.groceries = {
-				"milk",
-				"eggs",
-				"cheese",
-			}
-			variables.recursiveData = {}
-			variables.recursiveData.reference = variables.recursiveData
-
-		interacting with table in a super optimized way
-			variablesObject:set("myVariable", "Hello, world!")
-			variablesObject:set("numbers", "12345678")
-			variablesObject:set("groceries", {
-				"milk",
-				"eggs",
-				"cheese",
-			})
-			variablesObject:set("recursiveData", {})
-			variablesObject:set("reference", variables.recursiveData, variables.recursiveData)
-
-		destroying object
-			variablesObject:destroy()
-			variablesObject = nil
-			variables = nil
-
-	Copyright (c) 2025 arythmitical
-
-	Permission is hereby granted, free of charge, to any person obtaining a copy of
-	this software and associated documentation files (the "Software"), to deal in the
-	Software without restriction, including without limitation the rights to use, copy,
-	modify, merge, publish, distribute, sublicense, and/or sell copies of the Software,
-	and to permit persons to whom the Software is furnished to do so, subject to the
-	following conditions:
-
-	The above copyright notice and this permission notice shall be included in all copies
-	or substantial portions of the Software.
-
-	THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, 
-	INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR
-	PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
-	LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
-	TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
-	USE OR OTHER DEALINGS IN THE SOFTWARE.
+	For usage docs and license, visit:
+	https://github.com/arythmitical/LimitedTable
 ]]
 
 --!strict
@@ -76,6 +12,8 @@
 
 local LimitedTable = {}
 LimitedTable.__index = LimitedTable
+
+local newIndexWarningShown = false
 
 -- used by methods in metatables for referencing LimitedTable by their environments
 local objectsDictionary = setmetatable(
@@ -198,43 +136,22 @@ end
 	Not stable because __newindex does not fire for entries that already exist.
 ]]
 function tableMetatable.__newindex(self: LimitedTableTable, key: any, value: any): ()
-	warn("writing to table directly is not stable, use limitedTable:set() instead")
-
-	-- code is mostly synced with LimitedTable:set()
+	if newIndexWarningShown == false then
+		warn("writing to table directly is not stable, use limitedTable:set() instead")
+		newIndexWarningShown = true
+	end
 
 	local object: LimitedTable? = objectsDictionary[self] -- reference to LimitedTable
 	assert(object, "table does not belong to any LimitedTable")
 
-	local currentSize: number = object._currentSize
-	local oldValue: any = self[key]
-
-	currentSize += calculateSize(value) - calculateSize(oldValue) -- currentSize + delta
-
-	-- entry does not exist if it is nil
-	if oldValue == nil then
-		currentSize += calculateSize(key) + 16 -- 16 bytes overhead for each entry
-	elseif value == nil then
-		currentSize -= calculateSize(key) + 16 -- 16 bytes overhead for each entry
-	end
-
-	if typeof(value) == "table" and objectsDictionary[value] == nil then
-		currentSize += transformTableRecursive(object, value)
-	end
-
-	if currentSize > object.maximumSize then
-		-- not using assert for speed and stack level "2"
-		error(`maximum size of {object.maximumSize} bytes reached`, 2)
-	end
-
-	-- table should change only if the size does not exceed
-
-	object._currentSize = currentSize
-	rawset(self :: any, key, value) -- typecasted into any because rawset type definition is incorrect
+	object:set(key, value, self)
 end
 
 --[[
 	Create a new LimitedTable object with given size limit of "maximumSize".
-	When writing a value that exceeds total size, raises an error.
+	When writing a value that exceeds total size, raises an error with "errorMessage".
+
+	"errorMessage" defaults to "maximum size of %s bytes reached"
 	
 	For getting, use LimitedTable.table like a normal table.
 	For setting, use LimitedTable:set(). Writing to LimitedTable.table is unstable.
@@ -244,13 +161,14 @@ end
 		env.table:set("test", "Hi")
 		env.table.slow = "brrrrrr"
 ]]
-function LimitedTable.new(maximumSize: number): LimitedTable
+function LimitedTable.new(maximumSize: number, errorMessage: string?): LimitedTable
 	assert(typeof(maximumSize) == "number", "expected maximumSize to be a number")
-	-- hiding metatable use haha very funny
+
 	local object = setmetatable({}, LimitedTable)
 	object._currentSize = 0
 	object.maximumSize = maximumSize
 	object.table = setmetatable({} :: { [any]: any }, tableMetatable)
+	object.sizeExceededMessage = errorMessage or "maximum size of %s bytes reached"
 
 	objectsDictionary[object.table] = object
 
@@ -373,7 +291,7 @@ function LimitedTable.insert(self: LimitedTable, value: any, array: LimitedTable
 	end
 
 	if currentSize > self.maximumSize then
-		error(`maximum size of {self.maximumSize} bytes reached`, 2)
+		error(string.format(self.sizeExceededMessage, self.maximumSize), 2)
 	end
 
 	-- array should change only if the size does not exceed
@@ -498,9 +416,10 @@ type LimitedTableTable = typeof(setmetatable({} :: { [any]: any }, tableMetatabl
 
 export type LimitedTable = typeof(setmetatable(
 	{} :: {
+		table: LimitedTableTable,
 		maximumSize: number,
 		_currentSize: number,
-		table: LimitedTableTable,
+		sizeExceededMessage: string,
 	},
 	LimitedTable
 ))

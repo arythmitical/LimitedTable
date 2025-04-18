@@ -9,7 +9,6 @@ Constructor of tables with size limits. Useful for interpreters, VMs and much mo
 Add LimitedTable to your dependencies in `wally.toml` file:
 
 ```toml
-[dependencies]
 limitedtable = "arythmitical/limitedtable@1.1.0"
 ```
 
@@ -25,7 +24,7 @@ wally install
 
 ### Using .rbxm from GitHub
 
-Download the [latest release file](github.com/arythmitical/LimitedTable/releases) from releases and add it into your project.
+Download the [latest release file](https://github.com/arythmitical/LimitedTable/releases/latest) from releases and add it into your project.
 
 ## Example
 
@@ -44,10 +43,11 @@ Docs are not available, however the interface is pretty intuitive. Here are some
 ```lua
 local limitedTable = LimitedTable.new(512000)
 
+limitedTable.sizeExceededMessage = "maximum size of a gazillion bytes reached" -- u can also do LimitedTable.new(512000, "my error message!")
+
 limitedTable.maximumSize = 512001 -- be careful when reducing maximum size
 
 print(limitedTable._currentSize)
-
 print(LimitedTable.isValid(limitedTable)) -- true
 ```
 
@@ -92,6 +92,16 @@ print(#realTable.myArray) -- 10
 print(table.find(realTable.myArray, "lol")) -- 1
 limitedTable:remove("myArray", 1)
 print(table.find(realTable.myArray, "lol")) -- nil
+```
+
+### Getting raw tables
+
+```lua
+local rawTable = limitedTable:cloneRaw()
+
+print(realTable == rawTable) -- false
+
+local anotherClone = limitedTable:cloneRaw(realTable.myArray)
 ```
 
 ### Disposing of the LimitedTable

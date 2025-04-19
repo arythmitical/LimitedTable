@@ -13,12 +13,23 @@
 local LimitedTable = {}
 LimitedTable.__index = LimitedTable
 
-local newIndexWarningShown = false
+-- in case developer was writing to table directly
+local newIndexWarningShown: boolean = false
 
--- used by methods in metatables for referencing LimitedTable by their environments
+-- used for quickly referencing LimitedTable by its LimitedTable, without any complicated things
 local objectsDictionary = setmetatable(
 	{} :: {
 		[LimitedTableTable]: LimitedTable?,
+	},
+	{
+		__mode = "kv", -- when objects are not referenced anywhere, they should get obliterated by GC
+	}
+)
+
+-- used for checking reference amount to LimitedTableTable
+local objectsReferences = setmetatable(
+	{} :: {
+		[LimitedTableTable]: number,
 	},
 	{
 		__mode = "kv", -- when objects are not referenced anywhere, they should get obliterated by GC
@@ -68,17 +79,24 @@ end
 	
 	Returns the calculated size of table.
 ]]
-local function transformTableRecursive(object: LimitedTable, data: { [any]: any }): number
+local function transformTableRecursive(
+	data: { [any]: any },
+	object: LimitedTable,
+	calculated: { { [any]: any } }
+): number
+	table.insert(calculated, data)
+
 	local currentSize = 0 -- header is already included from calculateSize()
 
 	setmetatable(data, tableMetatable)
 	objectsDictionary[data] = object
+	objectsReferences[data] = 0
 
 	for key, value in pairs(data) do
 		currentSize += 16 + calculateSize(key) + calculateSize(value) -- each entry takes up 16 bytes no matter what
 
-		if typeof(value) == "table" and objectsDictionary[value] == nil then
-			currentSize += transformTableRecursive(object, value)
+		if typeof(value) == "table" and objectsDictionary[value] == nil and table.find(calculated, value) == nil then
+			currentSize += transformTableRecursive(value, object, calculated)
 		end
 	end
 
@@ -113,9 +131,35 @@ local function cloneTableRecursive<T>(target: LimitedTableTable, visited: { [Lim
 end
 
 --[[
-	Traverses over a table, wiping out everything possible.
+	Frees the table out of LimitedTable and its listeners, and returns the size it was taking.
+	If additional tables were found and they don't have any references too, does the same thing for them.
 ]]
-local function clearTableRecursive(target: LimitedTableTable, visited: { LimitedTableTable }): ()
+local function freeTableSizeRecursive(target: LimitedTableTable, calculated: { LimitedTableTable }): number
+	table.insert(calculated, target)
+
+	local currentSize = 0 -- header is already included from calculateSize()
+
+	setmetatable(target :: any, nil)
+
+	objectsDictionary[target] = nil
+	objectsReferences[target] = nil
+
+	for key, value in pairs(target) do
+		currentSize += 16 + calculateSize(key) + calculateSize(value) -- each entry takes up 16 bytes no matter what
+
+		if typeof(value) == "table" and objectsReferences[value] == 1 and table.find(calculated, value) == nil then -- only if referenced here
+			currentSize += freeTableSizeRecursive(value, calculated)
+		end
+	end
+
+	return currentSize
+end
+
+--[[
+	Traverses over a table, wiping out everything possible.
+	If additional tables were found, does the same thing for them.
+]]
+local function wipeTableRecursive(target: LimitedTableTable, visited: { LimitedTableTable }): ()
 	if table.find(visited, target) == nil then
 		table.insert(visited, target)
 
@@ -123,7 +167,7 @@ local function clearTableRecursive(target: LimitedTableTable, visited: { Limited
 
 		for key: any, value: any in pairs(target) do
 			if typeof(value) == "table" and getmetatable(value) == tableMetatable then
-				clearTableRecursive(value, visited)
+				wipeTableRecursive(value, visited)
 			end
 			target[key] = nil
 		end
@@ -167,10 +211,12 @@ function LimitedTable.new(maximumSize: number, errorMessage: string?): LimitedTa
 	local object = setmetatable({}, LimitedTable)
 	object._currentSize = 0
 	object.maximumSize = maximumSize
-	object.table = setmetatable({} :: { [any]: any }, tableMetatable)
 	object.sizeExceededMessage = errorMessage or "maximum size of %s bytes exceeded"
 
-	objectsDictionary[object.table] = object
+	local limitedTableTable = setmetatable({} :: { [any]: any }, tableMetatable)
+	object.table = limitedTableTable
+	objectsDictionary[limitedTableTable] = object
+	objectsReferences[limitedTableTable] = 0 -- only references coming from LimitedTableTable are counted
 
 	return object
 end
@@ -242,15 +288,35 @@ function LimitedTable.set(self: LimitedTable, key: any, value: any, table: Limit
 		currentSize -= calculateSize(key) + 16 -- 16 bytes overhead for each entry
 	end
 
-	if typeof(value) == "table" and objectsDictionary[value] == nil then
-		currentSize += transformTableRecursive(self, value)
+	if typeof(value) == "table" then
+		if objectsDictionary[value] == nil then
+			currentSize += transformTableRecursive(value, self, {})
+		end
+
+		objectsReferences[value] += 1
 	end
 
 	if currentSize > self.maximumSize then
+		-- changes must be reverted
+		if typeof(value) == "table" then
+			objectsReferences[value] -= 1
+		end
+
 		error(string.format(self.sizeExceededMessage, self.maximumSize), 2)
 	end
 
-	-- table should change only if the size does not exceed
+	-- table must change only if the size does not exceed
+
+	-- reducing size if the table is no longer referenced inside LimitedTable
+	-- past limit check because subtraction will never exceed size limit
+	if typeof(oldValue) == "table" then
+		-- oldValue is LimitedTableTable
+		objectsReferences[oldValue] -= 1
+
+		if objectsReferences[oldValue] == 0 then
+			currentSize -= freeTableSizeRecursive(oldValue, {})
+		end
+	end
 
 	self._currentSize = currentSize
 	rawset(target :: any, key, value) -- typecasted into any because rawset type definition is incorrect
@@ -287,7 +353,7 @@ function LimitedTable.insert(self: LimitedTable, value: any, array: LimitedTable
 	currentSize += calculateSize(value) + 24 -- value size + key internal + number size
 
 	if typeof(value) == "table" and objectsDictionary[value] == nil then
-		currentSize += transformTableRecursive(self, value)
+		currentSize += transformTableRecursive(value, self, {})
 	end
 
 	if currentSize > self.maximumSize then
@@ -334,7 +400,19 @@ function LimitedTable.remove(self: LimitedTable, array: LimitedTableTable?, posi
 	local targetValue = target[targetPos]
 
 	if targetValue ~= nil then
-		self._currentSize -= calculateSize(targetValue) + 24 -- value size + key internal + number size
+		local newSize = self._currentSize
+
+		newSize -= calculateSize(targetValue) + 24 -- value size + key internal + number size
+
+		-- reducing size if the table is no longer referenced inside LimitedTable
+		if typeof(targetValue) == "table" then
+			-- oldValue is LimitedTableTable
+			objectsReferences[targetValue] -= 1
+
+			if objectsReferences[targetValue] == 0 then
+				newSize -= freeTableSizeRecursive(targetValue, {})
+			end
+		end
 
 		-- size checks are not performed because we are only subtracting current size,
 		-- should not be a problem but if you experience something weird, be aware
@@ -404,7 +482,7 @@ end
 function LimitedTable.destroy(self: LimitedTable): ()
 	assert(self, 'must be called via ":" not ".", or provide LimitedTable')
 
-	clearTableRecursive(self.table, {})
+	wipeTableRecursive(self.table, {})
 
 	setmetatable(self :: any, nil)
 	table.clear(self :: any)

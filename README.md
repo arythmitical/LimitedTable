@@ -9,7 +9,7 @@ Constructor of tables with size limits. Useful for interpreters, VMs and much mo
 Add LimitedTable to your dependencies in `wally.toml` file:
 
 ```toml
-limitedtable = "arythmitical/limitedtable@1.1.0"
+limitedtable = "arythmitical/limitedtable@1.1.1"
 ```
 
 In shell, run:

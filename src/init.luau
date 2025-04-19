@@ -151,7 +151,7 @@ end
 	Create a new LimitedTable object with given size limit of "maximumSize".
 	When writing a value that exceeds total size, raises an error with "errorMessage".
 
-	"errorMessage" defaults to "maximum size of %s bytes reached"
+	"errorMessage" defaults to "maximum size of %s bytes exceeded"
 	
 	For getting, use LimitedTable.table like a normal table.
 	For setting, use LimitedTable:set(). Writing to LimitedTable.table is unstable.
@@ -168,7 +168,7 @@ function LimitedTable.new(maximumSize: number, errorMessage: string?): LimitedTa
 	object._currentSize = 0
 	object.maximumSize = maximumSize
 	object.table = setmetatable({} :: { [any]: any }, tableMetatable)
-	object.sizeExceededMessage = errorMessage or "maximum size of %s bytes reached"
+	object.sizeExceededMessage = errorMessage or "maximum size of %s bytes exceeded"
 
 	objectsDictionary[object.table] = object
 
@@ -247,7 +247,7 @@ function LimitedTable.set(self: LimitedTable, key: any, value: any, table: Limit
 	end
 
 	if currentSize > self.maximumSize then
-		error(`maximum size of {self.maximumSize} bytes reached`, 2)
+		error(string.format(self.sizeExceededMessage, self.maximumSize), 2)
 	end
 
 	-- table should change only if the size does not exceed

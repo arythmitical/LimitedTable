@@ -90,7 +90,7 @@ local function transformTableRecursive(
 
 	setmetatable(data, tableMetatable)
 	objectsDictionary[data] = object
-	objectsReferences[data] = 0
+	objectsReferences[data] = 1
 
 	for key, value in pairs(data) do
 		currentSize += 16 + calculateSize(key) + calculateSize(value) -- each entry takes up 16 bytes no matter what
@@ -291,9 +291,9 @@ function LimitedTable.set(self: LimitedTable, key: any, value: any, table: Limit
 	if typeof(value) == "table" then
 		if objectsDictionary[value] == nil then
 			currentSize += transformTableRecursive(value, self, {})
+		else
+			objectsReferences[value] += 1
 		end
-
-		objectsReferences[value] += 1
 	end
 
 	if currentSize > self.maximumSize then
@@ -352,8 +352,12 @@ function LimitedTable.insert(self: LimitedTable, value: any, array: LimitedTable
 
 	currentSize += calculateSize(value) + 24 -- value size + key internal + number size
 
-	if typeof(value) == "table" and objectsDictionary[value] == nil then
-		currentSize += transformTableRecursive(value, self, {})
+	if typeof(value) == "table" then
+		if objectsDictionary[value] == nil then
+			currentSize += transformTableRecursive(value, self, {})
+		else
+			objectsReferences[value] += 1
+		end
 	end
 
 	if currentSize > self.maximumSize then

@@ -17,7 +17,7 @@ LimitedTable.__index = LimitedTable
 local newIndexWarningShown: boolean = false
 
 -- used for quickly referencing LimitedTable by its LimitedTable, without any complicated things
-local objectsDictionary = setmetatable(
+local objectsRegistry = setmetatable(
 	{} :: {
 		[LimitedTableTable]: LimitedTable?,
 	},
@@ -89,13 +89,13 @@ local function transformTableRecursive(
 	local currentSize = 0 -- header is already included from calculateSize()
 
 	setmetatable(data, tableMetatable)
-	objectsDictionary[data] = object
+	objectsRegistry[data] = object
 	objectsReferences[data] = 1
 
 	for key, value in pairs(data) do
 		currentSize += 16 + calculateSize(key) + calculateSize(value) -- each entry takes up 16 bytes no matter what
 
-		if typeof(value) == "table" and objectsDictionary[value] == nil and table.find(calculated, value) == nil then
+		if typeof(value) == "table" and objectsRegistry[value] == nil and table.find(calculated, value) == nil then
 			currentSize += transformTableRecursive(value, object, calculated)
 		end
 	end
@@ -141,7 +141,7 @@ local function freeTableSizeRecursive(target: LimitedTableTable, calculated: { L
 
 	setmetatable(target :: any, nil)
 
-	objectsDictionary[target] = nil
+	objectsRegistry[target] = nil
 	objectsReferences[target] = nil
 
 	for key, value in pairs(target) do
@@ -185,7 +185,7 @@ function tableMetatable.__newindex(self: LimitedTableTable, key: any, value: any
 		newIndexWarningShown = true
 	end
 
-	local object: LimitedTable? = objectsDictionary[self] -- reference to LimitedTable
+	local object: LimitedTable? = objectsRegistry[self] -- reference to LimitedTable
 	assert(object, "table does not belong to any LimitedTable")
 
 	object:set(key, value, self)
@@ -215,7 +215,7 @@ function LimitedTable.new(maximumSize: number, errorMessage: string?): LimitedTa
 
 	local limitedTableTable = setmetatable({} :: { [any]: any }, tableMetatable)
 	object.table = limitedTableTable
-	objectsDictionary[limitedTableTable] = object
+	objectsRegistry[limitedTableTable] = object
 	objectsReferences[limitedTableTable] = 0 -- only references coming from LimitedTableTable are counted
 
 	return object
@@ -269,34 +269,31 @@ function LimitedTable.set(self: LimitedTable, key: any, value: any, table: Limit
 	if table == nil then
 		target = self.table
 	else
-		assert(
-			objectsDictionary[table] == self,
-			"table does not belong to LimitedTable, or is not a valid object at all"
-		)
+		assert(objectsRegistry[table] == self, "table does not belong to LimitedTable, or is not a valid object at all")
 		target = table
 	end
 
-	local currentSize: number = self._currentSize
+	local newSize: number = self._currentSize
 	local oldValue: any = target[key]
 
-	currentSize += calculateSize(value) - calculateSize(oldValue) -- currentSize + delta
+	newSize += calculateSize(value) - calculateSize(oldValue) -- currentSize + delta
 
 	-- entry does not exist if it is nil
 	if oldValue == nil then
-		currentSize += calculateSize(key) + 16 -- 16 bytes overhead for each entry
+		newSize += calculateSize(key) + 16 -- 16 bytes overhead for each entry
 	elseif value == nil then
-		currentSize -= calculateSize(key) + 16 -- 16 bytes overhead for each entry
+		newSize -= calculateSize(key) + 16 -- 16 bytes overhead for each entry
 	end
 
 	if typeof(value) == "table" then
-		if objectsDictionary[value] == nil then
-			currentSize += transformTableRecursive(value, self, {})
+		if objectsRegistry[value] == nil then
+			newSize += transformTableRecursive(value, self, {})
 		else
 			objectsReferences[value] += 1
 		end
 	end
 
-	if currentSize > self.maximumSize then
+	if newSize > self.maximumSize then
 		-- changes must be reverted
 		if typeof(value) == "table" then
 			objectsReferences[value] -= 1
@@ -314,11 +311,11 @@ function LimitedTable.set(self: LimitedTable, key: any, value: any, table: Limit
 		objectsReferences[oldValue] -= 1
 
 		if objectsReferences[oldValue] == 0 then
-			currentSize -= freeTableSizeRecursive(oldValue, {})
+			newSize -= freeTableSizeRecursive(oldValue, {})
 		end
 	end
 
-	self._currentSize = currentSize
+	self._currentSize = newSize
 	rawset(target :: any, key, value) -- typecasted into any because rawset type definition is incorrect
 end
 
@@ -341,32 +338,29 @@ function LimitedTable.insert(self: LimitedTable, value: any, array: LimitedTable
 	if array == nil then
 		target = self.table
 	else
-		assert(
-			objectsDictionary[array] == self,
-			"table does not belong to LimitedTable, or is not a valid object at all"
-		)
+		assert(objectsRegistry[array] == self, "table does not belong to LimitedTable, or is not a valid object at all")
 		target = array
 	end
 
-	local currentSize: number = self._currentSize
+	local newSize: number = self._currentSize
 
-	currentSize += calculateSize(value) + 24 -- value size + key internal + number size
+	newSize += calculateSize(value) + 24 -- value size + key internal + number size
 
 	if typeof(value) == "table" then
-		if objectsDictionary[value] == nil then
-			currentSize += transformTableRecursive(value, self, {})
+		if objectsRegistry[value] == nil then
+			newSize += transformTableRecursive(value, self, {})
 		else
 			objectsReferences[value] += 1
 		end
 	end
 
-	if currentSize > self.maximumSize then
+	if newSize > self.maximumSize then
 		error(string.format(self.sizeExceededMessage, self.maximumSize), 2)
 	end
 
 	-- array should change only if the size does not exceed
 
-	self._currentSize = currentSize
+	self._currentSize = newSize
 
 	if not position then
 		table.insert(target :: any, value) -- table.insert bypasses metatables
@@ -393,10 +387,7 @@ function LimitedTable.remove(self: LimitedTable, array: LimitedTableTable?, posi
 	if array == nil then
 		target = self.table
 	else
-		assert(
-			objectsDictionary[array] == self,
-			"table does not belong to LimitedTable, or is not a valid object at all"
-		)
+		assert(objectsRegistry[array] == self, "table does not belong to LimitedTable, or is not a valid object at all")
 		target = array
 	end
 
@@ -421,6 +412,7 @@ function LimitedTable.remove(self: LimitedTable, array: LimitedTableTable?, posi
 		-- size checks are not performed because we are only subtracting current size,
 		-- should not be a problem but if you experience something weird, be aware
 
+		self._currentSize = newSize
 		table.remove(target :: any, targetPos) -- table.remove bypasses metatables
 	end
 end
@@ -454,10 +446,7 @@ function LimitedTable.cloneRaw(self: LimitedTable, table: LimitedTableTable?): {
 	if table == nil then
 		target = self.table
 	else
-		assert(
-			objectsDictionary[table] == self,
-			"table does not belong to LimitedTable, or is not a valid object at all"
-		)
+		assert(objectsRegistry[table] == self, "table does not belong to LimitedTable, or is not a valid object at all")
 		target = table
 	end
 
@@ -491,7 +480,7 @@ function LimitedTable.destroy(self: LimitedTable): ()
 	setmetatable(self :: any, nil)
 	table.clear(self :: any)
 
-	-- references from objectsDictionary are auto-removed because it is a weak table
+	-- references from objectsRegistry are auto-removed because it is a weak table
 end
 
 type LimitedTableTable = typeof(setmetatable({} :: { [any]: any }, tableMetatable))

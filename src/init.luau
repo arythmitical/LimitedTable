@@ -281,7 +281,9 @@ function LimitedTable.set(self: LimitedTable, key: any, value: any, table: Limit
 	-- entry does not exist if it is nil
 	if oldValue == nil then
 		newSize += calculateSize(key) + 16 -- 16 bytes overhead for each entry
-	elseif value == nil then
+	end
+
+	if value == nil then
 		newSize -= calculateSize(key) + 16 -- 16 bytes overhead for each entry
 	end
 
@@ -342,27 +344,29 @@ function LimitedTable.insert(self: LimitedTable, value: any, array: LimitedTable
 		target = array
 	end
 
-	local newSize: number = self._currentSize
+	if value ~= nil then -- array will not be increased, but keys must still be updated
+		local newSize: number = self._currentSize
 
-	newSize += calculateSize(value) + 24 -- value size + key internal + number size
+		newSize += calculateSize(value) + 24 -- value size + key internal + number size
 
-	if typeof(value) == "table" then
-		if objectsRegistry[value] == nil then
-			newSize += transformTableRecursive(value, self, {})
-		else
-			objectsReferences[value] += 1
+		if typeof(value) == "table" then
+			if objectsRegistry[value] == nil then
+				newSize += transformTableRecursive(value, self, {})
+			else
+				objectsReferences[value] += 1
+			end
 		end
+
+		if newSize > self.maximumSize then
+			error(string.format(self.sizeExceededMessage, self.maximumSize), 2)
+		end
+
+		-- array should change only if the size does not exceed
+
+		self._currentSize = newSize
 	end
 
-	if newSize > self.maximumSize then
-		error(string.format(self.sizeExceededMessage, self.maximumSize), 2)
-	end
-
-	-- array should change only if the size does not exceed
-
-	self._currentSize = newSize
-
-	if not position then
+	if position == nil then
 		table.insert(target :: any, value) -- table.insert bypasses metatables
 	else
 		table.insert(target :: any, position :: any, value)

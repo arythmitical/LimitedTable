@@ -14,5 +14,6 @@
 	},
 	"luau-lsp.sourcemap.autogenerate": true,
 	"luau-lsp.sourcemap.useVSCodeWatcher": true,
-	"luau-lsp.types.robloxSecurityLevel": "None"
+	"luau-lsp.types.robloxSecurityLevel": "None",
+	"stylua.targetReleaseVersion": "latest"
 }

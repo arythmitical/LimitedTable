@@ -195,7 +195,10 @@ end
 ]]
 function tableMetatable.__newindex(self: LimitedTableTable, key: any, value: any): ()
 	if newIndexWarningShown == false then
-		warn("writing to table directly is not stable, use limitedTable:set() instead")
+		warn(
+			"writing to table directly is not stable, use limitedTable:set() instead"
+				.. debug.traceback("came from:", 2)
+		)
 		newIndexWarningShown = true
 	end
 
@@ -219,16 +222,25 @@ end
 		env.table:set("test", "Hi")
 		env.table.slow = "brrrrrr"
 ]]
-function LimitedTable.new(maximumSize: number, errorMessage: string?): LimitedTable
-	assert(typeof(maximumSize) == "number", "expected maximumSize to be a number")
+function LimitedTable.new(maximumSize: number, errorMessage: (string | () -> ())?): LimitedTable
+	assert(typeof(maximumSize) == "number", "expected maximum size to be a number")
+	assert(
+		errorMessage == nil
+			or typeof(errorMessage) == "string"
+			or typeof(errorMessage) == "function",
+		"expected error message to be a string or a function"
+	)
 
-	local object = setmetatable({}, LimitedTable)
+	local object = {}
 	object._currentSize = 0
 	object.maximumSize = maximumSize
 	object.sizeExceededMessage = errorMessage or "maximum size of %s bytes exceeded"
 
 	local limitedTableTable = setmetatable({} :: { [any]: any }, tableMetatable)
 	object.table = limitedTableTable
+
+	setmetatable(object, LimitedTable) -- setting last because of LimitedTable.__newindex
+
 	objectsRegistry[limitedTableTable] = object
 	objectsReferences[limitedTableTable] = 0 -- only references coming from LimitedTableTable are counted
 
@@ -318,7 +330,11 @@ function LimitedTable.set(self: LimitedTable, key: any, value: any, table: Limit
 			objectsReferences[value] -= 1
 		end
 
-		error(string.format(self.sizeExceededMessage, self.maximumSize), 2)
+		if typeof(self.sizeExceededMessage) == "function" then
+			self.sizeExceededMessage(target)
+		else
+			error(string.format(self.sizeExceededMessage, self.maximumSize), 2)
+		end
 	end
 
 	-- table must change only if the size does not exceed
@@ -383,7 +399,11 @@ function LimitedTable.insert(
 		end
 
 		if newSize > self.maximumSize then
-			error(string.format(self.sizeExceededMessage, self.maximumSize), 2)
+			if typeof(self.sizeExceededMessage) == "function" then
+				self.sizeExceededMessage(target)
+			else
+				error(string.format(self.sizeExceededMessage, self.maximumSize), 2)
+			end
 		end
 
 		-- array should change only if the size does not exceed
@@ -525,7 +545,7 @@ export type LimitedTable = typeof(setmetatable(
 		table: LimitedTableTable,
 		maximumSize: number,
 		_currentSize: number,
-		sizeExceededMessage: string,
+		sizeExceededMessage: string | (table: LimitedTableTable) -> (),
 	},
 	LimitedTable
 ))

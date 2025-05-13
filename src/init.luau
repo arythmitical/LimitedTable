@@ -538,6 +538,18 @@ function LimitedTable.destroy(self: LimitedTable): ()
 	-- references from objectsRegistry are auto-removed because it is a weak table
 end
 
+--[[
+	protection against modifying unknown properties in
+	LimitedTable object (not object.table)
+]]
+function LimitedTable.__newindex(_, key: string): ()
+	error(
+		`attempt to set unknown key "{key}" of LimitedTable.`
+			.. " did you mean to set key of LimitedTable.table?",
+		2
+	)
+end
+
 type LimitedTableTable = typeof(setmetatable({} :: { [any]: any }, tableMetatable))
 
 export type LimitedTable = typeof(setmetatable(

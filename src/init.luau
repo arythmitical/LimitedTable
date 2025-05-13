@@ -310,17 +310,14 @@ end
 		})
 ]]
 function LimitedTable.set(self: LimitedTable, key: any, value: any, table: LimitedTableTable?): ()
-	assert(self, 'must be called via ":" not ".", or provide LimitedTable')
+	assert(LimitedTable.isValid(self), 'must be called via ":" not ".", or provide LimitedTable')
 
 	local target: LimitedTableTable
 
 	if table == nil then
 		target = self.table
 	else
-		assert(
-			objectsRegistry[table] == self,
-			"table does not belong to LimitedTable, or is not a valid object at all"
-		)
+		assert(objectsRegistry[table] == self, "table is not attached to any LimitedTable")
 		target = table
 	end
 
@@ -393,17 +390,14 @@ function LimitedTable.insert(
 	array: LimitedTableTable?,
 	position: number?
 ): ()
-	assert(self, 'must be called via ":" not ".", or provide LimitedTable')
+	assert(LimitedTable.isValid(self), 'must be called via ":" not ".", or provide LimitedTable')
 
 	local target: LimitedTableTable
 
 	if array == nil then
 		target = self.table
 	else
-		assert(
-			objectsRegistry[array] == self,
-			"table does not belong to LimitedTable, or is not a valid object at all"
-		)
+		assert(objectsRegistry[array] == self, "table is not attached to any LimitedTable")
 		target = array
 	end
 
@@ -451,17 +445,14 @@ end
 		obj:remove("myArray, 2")
 ]]
 function LimitedTable.remove(self: LimitedTable, array: LimitedTableTable?, position: number?): ()
-	assert(self, 'must be called via ":" not ".", or provide LimitedTable')
+	assert(LimitedTable.isValid(self), 'must be called via ":" not ".", or provide LimitedTable')
 
 	local target: LimitedTableTable
 
 	if array == nil then
 		target = self.table
 	else
-		assert(
-			objectsRegistry[array] == self,
-			"table does not belong to LimitedTable, or is not a valid object at all"
-		)
+		assert(objectsRegistry[array] == self, "table is not attached to any LimitedTable")
 		target = array
 	end
 
@@ -567,8 +558,7 @@ end
 ]]
 function LimitedTable.__newindex(_, key: string): ()
 	error(
-		`attempt to set unknown key "{key}" of LimitedTable.`
-			.. " did you mean to set key of LimitedTable.table?",
+		`attempt to set unknown key "{key}" of LimitedTable. did you mean to set key of LimitedTable.table?`,
 		2
 	)
 end

@@ -248,27 +248,51 @@ function LimitedTable.new(maximumSize: number, errorMessage: (string | () -> ())
 end
 
 --[[
-	Checks if LimitedTable was created by this module (aka a "valid" one)
+	Checks if the given object is a valid LimitedTable created by this module
 	
 	Example:
 		print(LimitedTable.isValid(LimitedTable.new(512000))) -- "true"
 		print(LimitedTable.isValid({})) -- "false"
 ]]
 function LimitedTable.isValid(object: LimitedTable): boolean
-	assert(object, "object not provided")
+	return typeof(object) == "table" and getmetatable(object :: any) == LimitedTable
+end
 
-	if typeof(object) ~= "table" then
-		return false
+--[[
+	Checks if the given object is a valid LimitedTableTable created by this module
+	
+	Example:
+		print(LimitedTable.isValid(LimitedTable.new(512000))) -- "true"
+		print(LimitedTable.isValid({})) -- "false"
+]]
+function LimitedTable.isTable(table: LimitedTableTable): boolean
+	return typeof(table) == "table" and getmetatable(table :: any) == tableMetatable
+end
+
+--[[
+	Returns the LimitedTable that the table belongs to, or nil if not found.
+
+	Example:
+		print(LimitedTable.getOwner(lt)) --> true
+		print(LimitedTable.getOwner({})) --> false
+]]
+function LimitedTable.getOwner(table: LimitedTableTable): LimitedTable?
+	return objectsRegistry[table]
+end
+
+--[[
+	Calculates and returns the size of given data.
+]]
+function LimitedTable.sizeOf(data: any, recursive: boolean?): number
+	local size = calculateSize(data)
+
+	if typeof(data) == "table" and recursive == true then
+		for key, value in pairs(data) do
+			size += LimitedTable.sizeOf(key, recursive) + LimitedTable.sizeOf(value, recursive)
+		end
 	end
 
-	-- typecasted into any because getmetatable type definition is incorrect
-	local metatable = getmetatable(object :: any)
-
-	if metatable == nil then
-		return false
-	end
-
-	return metatable.__index == LimitedTable
+	return size
 end
 
 --[[

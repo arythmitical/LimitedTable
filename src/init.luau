@@ -491,6 +491,8 @@ function LimitedTable.remove(self: LimitedTable, array: LimitedTableTable?, posi
 		self._currentSize = newSize
 		table.remove(target :: any, targetPos) -- table.remove bypasses metatables
 	end
+
+	table.remove(target :: any, targetPos) -- table.remove bypasses metatables
 end
 
 --[[

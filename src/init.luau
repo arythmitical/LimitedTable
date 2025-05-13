@@ -489,7 +489,6 @@ function LimitedTable.remove(self: LimitedTable, array: LimitedTableTable?, posi
 		-- should not be a problem but if you experience something weird, be aware
 
 		self._currentSize = newSize
-		table.remove(target :: any, targetPos) -- table.remove bypasses metatables
 	end
 
 	table.remove(target :: any, targetPos) -- table.remove bypasses metatables

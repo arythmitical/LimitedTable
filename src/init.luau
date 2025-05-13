@@ -229,20 +229,20 @@ function LimitedTable.new(maximumSize: number, errorMessage: (string | () -> ())
 		"expected error message to be a string or a function"
 	)
 
-	local object = {}
-	object._currentSize = 0
-	object.maximumSize = maximumSize
-	object.sizeExceededMessage = errorMessage or "maximum size of %s bytes exceeded"
+	local self = {}
+	self._currentSize = 0
+	self.maximumSize = maximumSize
+	self.sizeExceededMessage = errorMessage or "maximum size of %s bytes exceeded"
 
 	local limitedTableTable = setmetatable({} :: { [any]: any }, tableMetatable)
-	object.table = limitedTableTable
+	self.table = limitedTableTable
 
-	setmetatable(object, LimitedTable) -- setting last because of LimitedTable.__newindex
+	setmetatable(self, LimitedTable) -- setting last because of LimitedTable.__newindex
 
-	objectsRegistry[limitedTableTable] = object
+	objectsRegistry[limitedTableTable] = self
 	objectsReferences[limitedTableTable] = 0 -- only references coming from LimitedTableTable are counted
 
-	return object
+	return self
 end
 
 --[[
@@ -297,7 +297,10 @@ end
 	Sets "key" of given "table" to "value".
 	"table" defaults to self.table
 	
-	Use over limitedTable.table[key] = value, as the latter is unstable.
+	Returns the size of the changes.
+
+	If "apply" is set to false, then it only returns the size difference,
+	without making any changes to the table.
 	
 	Example:
 		obj:set("a", "hi")
@@ -309,7 +312,13 @@ end
 		    "pizza",
 		})
 ]]
-function LimitedTable.set(self: LimitedTable, key: any, value: any, table: LimitedTableTable?): ()
+function LimitedTable.set(
+	self: LimitedTable,
+	key: any,
+	value: any,
+	table: LimitedTableTable?,
+	apply: boolean?
+): number
 	assert(LimitedTable.isValid(self), 'must be called via ":" not ".", or provide LimitedTable')
 
 	local target: LimitedTableTable
@@ -321,7 +330,7 @@ function LimitedTable.set(self: LimitedTable, key: any, value: any, table: Limit
 		target = table
 	end
 
-	local newSize: number = self._currentSize
+	local newSize: number = 0
 	local oldValue: any = target[key]
 
 	newSize += calculateSize(value) - calculateSize(oldValue) -- currentSize + delta
@@ -343,7 +352,7 @@ function LimitedTable.set(self: LimitedTable, key: any, value: any, table: Limit
 		end
 	end
 
-	if newSize > self.maximumSize then
+	if self._currentSize + newSize > self.maximumSize then
 		-- changes must be reverted
 		if typeof(value) == "table" then
 			objectsReferences[value] -= 1
@@ -369,16 +378,25 @@ function LimitedTable.set(self: LimitedTable, key: any, value: any, table: Limit
 		end
 	end
 
-	self._currentSize = newSize
-	rawset(target :: any, key, value) -- typecasted into any because rawset type definition is incorrect
+	if apply ~= false then
+		self._currentSize += newSize
+		rawset(target :: any, key, value) -- typecasted into any because rawset type definition is incorrect
+	end
+
+	return newSize
 end
 
 --[[
 	Inserts "value" at given "position" of "array".
-	
+
 	"array" defaults to self.table
 	"position" defaults to the end of the "array"
-	
+
+	Returns the size of the changes.
+
+	If "apply" is set to false, then it only returns the size difference,
+	without making any changes to the table.
+
 	Example:
 		for i = 1, 10 do
 			obj:insert("Hello, world!", "myArray")
@@ -388,8 +406,9 @@ function LimitedTable.insert(
 	self: LimitedTable,
 	value: any,
 	array: LimitedTableTable?,
-	position: number?
-): ()
+	position: number?,
+	apply: boolean?
+): number
 	assert(LimitedTable.isValid(self), 'must be called via ":" not ".", or provide LimitedTable')
 
 	local target: LimitedTableTable
@@ -401,9 +420,8 @@ function LimitedTable.insert(
 		target = array
 	end
 
-	if value ~= nil then -- array will not be increased, but keys must still be updated
-		local newSize: number = self._currentSize
-
+	local newSize: number = 0
+	if value ~= nil then -- inserting nil will only update keys, meaning there won't be size change
 		newSize += calculateSize(value) + 24 -- value size + key internal + number size
 
 		if typeof(value) == "table" then
@@ -414,37 +432,49 @@ function LimitedTable.insert(
 			end
 		end
 
-		if newSize > self.maximumSize then
+		if self._currentSize + newSize > self.maximumSize then
 			if typeof(self.sizeExceededMessage) == "function" then
 				self.sizeExceededMessage(target)
 			else
 				error(string.format(self.sizeExceededMessage, self.maximumSize), 2)
 			end
 		end
-
-		-- array should change only if the size does not exceed
-
-		self._currentSize = newSize
 	end
 
-	if position == nil then
-		table.insert(target :: any, value) -- table.insert bypasses metatables
-	else
-		table.insert(target :: any, position :: any, value)
+	if apply ~= false then
+		self._currentSize += newSize
+
+		if position == nil then
+			table.insert(target :: any, value) -- table.insert bypasses metatables
+		else
+			table.insert(target :: any, position :: any, value)
+		end
 	end
+
+	return newSize
 end
 
 --[[
 	Remove entry at given "position" of "array".
-	
+
 	"array" defaults to self.table
 	"position" defaults to the end of the "array"
-	
+
+	Returns the size of the changes.
+
+	If "apply" is set to false, then it only returns the size difference,
+	without making any changes to the table.
+
 	Example:
-		obj:remove("myArray")
-		obj:remove("myArray, 2")
+		obj:remove(obj.table.myArray)
+		obj:remove(obj.table.myArray, 2")
 ]]
-function LimitedTable.remove(self: LimitedTable, array: LimitedTableTable?, position: number?): ()
+function LimitedTable.remove(
+	self: LimitedTable,
+	array: LimitedTableTable?,
+	position: number?,
+	apply: boolean?
+): number
 	assert(LimitedTable.isValid(self), 'must be called via ":" not ".", or provide LimitedTable')
 
 	local target: LimitedTableTable
@@ -459,9 +489,8 @@ function LimitedTable.remove(self: LimitedTable, array: LimitedTableTable?, posi
 	local targetPos = position or #target
 	local targetValue = target[targetPos]
 
+	local newSize = 0
 	if targetValue ~= nil then
-		local newSize = self._currentSize
-
 		newSize -= calculateSize(targetValue) + 24 -- value size + key internal + number size
 
 		-- reducing size if the table is no longer referenced inside LimitedTable
@@ -474,13 +503,15 @@ function LimitedTable.remove(self: LimitedTable, array: LimitedTableTable?, posi
 			end
 		end
 
-		-- size checks are not performed because we are only subtracting current size,
-		-- should not be a problem but if you experience something weird, be aware
-
-		self._currentSize = newSize
+		-- size check is not performed because we are only subtracting current size
 	end
 
-	table.remove(target :: any, targetPos) -- table.remove bypasses metatables
+	if apply ~= false then
+		self._currentSize += newSize
+		table.remove(target :: any, targetPos) -- table.remove bypasses metatables
+	end
+
+	return newSize
 end
 
 --[[
@@ -556,7 +587,7 @@ end
 	protection against modifying unknown properties in
 	LimitedTable object (not object.table)
 ]]
-function LimitedTable.__newindex(_, key: string): ()
+function LimitedTable.__newindex(_: LimitedTable, key: string): ()
 	error(
 		`attempt to set unknown key "{key}" of LimitedTable. did you mean to set key of LimitedTable.table?`,
 		2

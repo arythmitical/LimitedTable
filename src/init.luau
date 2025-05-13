@@ -149,8 +149,6 @@ local function freeTableSizeRecursive(
 
 	local currentSize = 0 -- header is already included from calculateSize()
 
-	setmetatable(target :: any, nil)
-
 	objectsRegistry[target] = nil
 	objectsReferences[target] = nil
 

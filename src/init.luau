@@ -95,7 +95,11 @@ local function transformTableRecursive(
 	for key, value in pairs(data) do
 		currentSize += 16 + calculateSize(key) + calculateSize(value) -- each entry takes up 16 bytes no matter what
 
-		if typeof(value) == "table" and objectsRegistry[value] == nil and table.find(calculated, value) == nil then
+		if
+			typeof(value) == "table"
+			and objectsRegistry[value] == nil
+			and table.find(calculated, value) == nil
+		then
 			currentSize += transformTableRecursive(value, object, calculated)
 		end
 	end
@@ -106,7 +110,10 @@ end
 --[[
 	Returns a deep copy of "target", with all limited tables replaced by normal ones.
 ]]
-local function cloneTableRecursive<T>(target: LimitedTableTable, visited: { [LimitedTableTable]: T }): T
+local function cloneTableRecursive<T>(
+	target: LimitedTableTable,
+	visited: { [LimitedTableTable]: T }
+): T
 	local cached: T? = visited[target]
 
 	if cached == nil then
@@ -134,7 +141,10 @@ end
 	Frees the table out of LimitedTable and its listeners, and returns the size it was taking.
 	If additional tables were found and they don't have any references too, does the same thing for them.
 ]]
-local function freeTableSizeRecursive(target: LimitedTableTable, calculated: { LimitedTableTable }): number
+local function freeTableSizeRecursive(
+	target: LimitedTableTable,
+	calculated: { LimitedTableTable }
+): number
 	table.insert(calculated, target)
 
 	local currentSize = 0 -- header is already included from calculateSize()
@@ -147,7 +157,11 @@ local function freeTableSizeRecursive(target: LimitedTableTable, calculated: { L
 	for key, value in pairs(target) do
 		currentSize += 16 + calculateSize(key) + calculateSize(value) -- each entry takes up 16 bytes no matter what
 
-		if typeof(value) == "table" and objectsReferences[value] == 1 and table.find(calculated, value) == nil then -- only if referenced here
+		if
+			typeof(value) == "table"
+			and objectsReferences[value] == 1
+			and table.find(calculated, value) == nil
+		then -- only if referenced here
 			currentSize += freeTableSizeRecursive(value, calculated)
 		end
 	end
@@ -269,7 +283,10 @@ function LimitedTable.set(self: LimitedTable, key: any, value: any, table: Limit
 	if table == nil then
 		target = self.table
 	else
-		assert(objectsRegistry[table] == self, "table does not belong to LimitedTable, or is not a valid object at all")
+		assert(
+			objectsRegistry[table] == self,
+			"table does not belong to LimitedTable, or is not a valid object at all"
+		)
 		target = table
 	end
 
@@ -332,7 +349,12 @@ end
 			obj:insert("Hello, world!", "myArray")
 		end
 ]]
-function LimitedTable.insert(self: LimitedTable, value: any, array: LimitedTableTable?, position: number?): ()
+function LimitedTable.insert(
+	self: LimitedTable,
+	value: any,
+	array: LimitedTableTable?,
+	position: number?
+): ()
 	assert(self, 'must be called via ":" not ".", or provide LimitedTable')
 
 	local target: LimitedTableTable
@@ -340,7 +362,10 @@ function LimitedTable.insert(self: LimitedTable, value: any, array: LimitedTable
 	if array == nil then
 		target = self.table
 	else
-		assert(objectsRegistry[array] == self, "table does not belong to LimitedTable, or is not a valid object at all")
+		assert(
+			objectsRegistry[array] == self,
+			"table does not belong to LimitedTable, or is not a valid object at all"
+		)
 		target = array
 	end
 
@@ -391,7 +416,10 @@ function LimitedTable.remove(self: LimitedTable, array: LimitedTableTable?, posi
 	if array == nil then
 		target = self.table
 	else
-		assert(objectsRegistry[array] == self, "table does not belong to LimitedTable, or is not a valid object at all")
+		assert(
+			objectsRegistry[array] == self,
+			"table does not belong to LimitedTable, or is not a valid object at all"
+		)
 		target = array
 	end
 
@@ -450,7 +478,10 @@ function LimitedTable.cloneRaw(self: LimitedTable, table: LimitedTableTable?): {
 	if table == nil then
 		target = self.table
 	else
-		assert(objectsRegistry[table] == self, "table does not belong to LimitedTable, or is not a valid object at all")
+		assert(
+			objectsRegistry[table] == self,
+			"table does not belong to LimitedTable, or is not a valid object at all"
+		)
 		target = table
 	end
 

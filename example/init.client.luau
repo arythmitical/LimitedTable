@@ -98,7 +98,14 @@ local function create(bytecode: typeof(BYTECODE)): ()
 					-- step, limit
 					stackInfo = {
 						0,
-						tonumber(parseField(assert(actionInfo[2], 'no amount provided for "Repeat <number> times"'))),
+						tonumber(
+							parseField(
+								assert(
+									actionInfo[2],
+									'no amount provided for "Repeat <number> times"'
+								)
+							)
+						),
 					}
 					stack[action] = stackInfo
 				end
@@ -124,7 +131,11 @@ local function create(bytecode: typeof(BYTECODE)): ()
 			elseif operation == 54 then -- Create table <table>
 				varsObj:set(
 					string.gsub(
-						string.gsub(assert(actionInfo[2], 'no name provided for "Create table <table>"'), "{", ""),
+						string.gsub(
+							assert(actionInfo[2], 'no name provided for "Create table <table>"'),
+							"{",
+							""
+						),
 						"}",
 						""
 					),
@@ -133,8 +144,12 @@ local function create(bytecode: typeof(BYTECODE)): ()
 			elseif operation == 55 then -- Set <entry> of <table> to <any>
 				assert(actionInfo[3], "table name not provided")
 
-				local key =
-					parseField(assert(actionInfo[2], 'no <entry> provided for "Set <entry> of <table> to <any>"'))
+				local key = parseField(
+					assert(
+						actionInfo[2],
+						'no <entry> provided for "Set <entry> of <table> to <any>"'
+					)
+				)
 				key = tonumber(key) or key
 
 				varsObj:set(
@@ -143,7 +158,10 @@ local function create(bytecode: typeof(BYTECODE)): ()
 					assert(
 						vars[string.gsub(
 							string.gsub(
-								assert(actionInfo[3], "no <table> provided for Set <entry> of <table> to <any>"),
+								assert(
+									actionInfo[3],
+									"no <table> provided for Set <entry> of <table> to <any>"
+								),
 								"{",
 								""
 							),
@@ -186,7 +204,10 @@ local function create(bytecode: typeof(BYTECODE)): ()
 					action = actionInfo[5] -- loop finishes
 				else
 					-- key
-					varsObj:set(string.gsub(string.gsub(actionInfo[3] or "index", "{", ""), "}", ""), stackInfo[2])
+					varsObj:set(
+						string.gsub(string.gsub(actionInfo[3] or "index", "{", ""), "}", ""),
+						stackInfo[2]
+					)
 					-- value
 					varsObj:set(
 						string.gsub(string.gsub(actionInfo[4] or "value", "{", ""), "}", ""),
@@ -228,9 +249,15 @@ local function create(bytecode: typeof(BYTECODE)): ()
 					action = actionInfo[5] -- loop finishes
 				else
 					-- key
-					varsObj:set(string.gsub(string.gsub(actionInfo[3] or "index", "{", ""), "}", ""), stackInfo[2])
+					varsObj:set(
+						string.gsub(string.gsub(actionInfo[3] or "index", "{", ""), "}", ""),
+						stackInfo[2]
+					)
 					-- value
-					varsObj:set(string.gsub(string.gsub(actionInfo[4] or "value", "{", ""), "}", ""), value)
+					varsObj:set(
+						string.gsub(string.gsub(actionInfo[4] or "value", "{", ""), "}", ""),
+						value
+					)
 				end
 			else
 				error(`unknown opcode {operation}`)

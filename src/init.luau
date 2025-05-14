@@ -594,7 +594,7 @@ function LimitedTable.__newindex(_: LimitedTable, key: string): ()
 	)
 end
 
-type LimitedTableTable = typeof(setmetatable({} :: { [any]: any }, tableMetatable))
+export type LimitedTableTable = typeof(setmetatable({} :: { [any]: any }, tableMetatable))
 
 export type LimitedTable = typeof(setmetatable(
 	{} :: {

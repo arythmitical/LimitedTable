@@ -1,5 +1,4 @@
 {
-	"luau-lsp.plugin.enabled": true,
 	"luau-lsp.plugin.maximumRequestBodySize": "5mb",
 	"[luau]": {
 		"editor.insertSpaces": false,
@@ -13,7 +12,8 @@
 		"editor.unicodeHighlight.invisibleCharacters": false,
 	},
 	"luau-lsp.sourcemap.autogenerate": true,
+	"luau-lsp.sourcemap.rojoProjectFile": "example.project.json",
 	"luau-lsp.sourcemap.useVSCodeWatcher": true,
 	"luau-lsp.types.robloxSecurityLevel": "None",
-	"stylua.targetReleaseVersion": "latest"
+	"stylua.targetReleaseVersion": "latest",
 }

@@ -1,11 +1,3 @@
---[[
-	Constructor of tables with size limits.
-	Useful for interpreters, VMs and much more.
-	
-	For usage docs and license, visit:
-	https://github.com/arythmitical/LimitedTable
-]]
-
 --!strict
 --!native
 --!optimize 2
@@ -40,11 +32,8 @@ local objectsReferences = setmetatable(
 local tableMetatable = {}
 
 --[[
-	Calculates the size of "data", without recursing.
-	Reference sizes are calculated correctly.
-	
-	Handles probably all concrete and builtin types.
-	Not 100% accurate and never will. Lets be honest about that.
+	calculates the size of "data", without recursion.
+	not 100% accurate and never will. let's be honest about that.
 ]]
 local function calculateSize(data: any): number
 	local type = type(data)
@@ -68,16 +57,16 @@ local function calculateSize(data: any): number
 	elseif type == "buffer" then
 		return buffer.len(data)
 	else
-		warn(`{type} is not supported`) -- shouldn't occur
+		warn(`{type} is not supported`) -- should not occur
 		return 0
 	end
 end
 
 --[[
-	Attaches a counting metatable to the given table and calculates its initial size.
-	If additional tables were found, does the same thing for them.
+	attaches a metatable to the given table and calculates its initial size.
+	if additional tables were found, does the same thing for them.
 	
-	Returns the calculated size of table.
+	returns the calculated size of table.
 ]]
 local function transformTableRecursive(
 	data: { [any]: any },
@@ -108,7 +97,8 @@ local function transformTableRecursive(
 end
 
 --[[
-	Returns a deep copy of "target", with all limited tables replaced by normal ones.
+	returns a deep copy of "target", with all
+	LimitedTable tables replaced by normal tables.
 ]]
 local function cloneTableRecursive<T>(
 	target: LimitedTableTable,
@@ -138,8 +128,13 @@ local function cloneTableRecursive<T>(
 end
 
 --[[
-	Frees the table out of LimitedTable and its listeners, and returns the size it was taking.
-	If additional tables were found and they don't have any references too, does the same thing for them.
+	frees the table out of LimitedTable and its listeners,
+	and returns the size it was taking.
+
+	if additional tables were found and they don't have any
+	references too, does the same thing for them.
+
+	the table can then be attached to another LimitedTable
 ]]
 local function freeTableSizeRecursive(
 	target: LimitedTableTable,
@@ -168,8 +163,8 @@ local function freeTableSizeRecursive(
 end
 
 --[[
-	Traverses over a table, wiping out everything possible.
-	If additional tables were found, does the same thing for them.
+	clears and resets LimitedTable table.
+	if additional tables were found, does the same thing for them.
 ]]
 local function wipeTableRecursive(target: LimitedTableTable, visited: { LimitedTableTable }): ()
 	if table.find(visited, target) == nil then
@@ -187,9 +182,10 @@ local function wipeTableRecursive(target: LimitedTableTable, visited: { LimitedT
 end
 
 --[[
-	Adjusts _currentSize upon changes.
+	DEPRECATED
+	__newindex is not invoked for entries that already exist.
 	
-	Not stable because __newindex does not fire for entries that already exist.
+	listens to changes and adjusts _currentSize.
 ]]
 function tableMetatable.__newindex(self: LimitedTableTable, key: any, value: any): ()
 	if newIndexWarningShown == false then
@@ -207,7 +203,7 @@ function tableMetatable.__newindex(self: LimitedTableTable, key: any, value: any
 end
 
 --[[
-	Create a new LimitedTable object with given size limit of "maximumSize".
+	Creates a new LimitedTable object with given size limit of "maximumSize".
 	When writing a value that exceeds total size, raises an error with "errorMessage".
 
 	"errorMessage" defaults to "maximum size of %s bytes exceeded"
@@ -216,9 +212,11 @@ end
 	For setting, use LimitedTable:set(). Writing to LimitedTable.table is unstable.
 	
 	Example:
-		local env = LimitedTable.new(512000)
-		env.table:set("test", "Hi")
-		env.table.slow = "brrrrrr"
+	```lua
+	local lt = LimitedTable.new(512000)
+	lt.maximumSize += 64000
+	lt.sizeExceededMessage = "bum"
+	```
 ]]
 function LimitedTable.new(maximumSize: number, errorMessage: (string | () -> ())?): LimitedTable
 	assert(typeof(maximumSize) == "number", "expected maximum size to be a number")
@@ -246,22 +244,28 @@ function LimitedTable.new(maximumSize: number, errorMessage: (string | () -> ())
 end
 
 --[[
-	Checks if the given object is a valid LimitedTable created by this module
+	Checks if the given object is a valid LimitedTable from this module.
 	
 	Example:
-		print(LimitedTable.isValid(LimitedTable.new(512000))) -- "true"
-		print(LimitedTable.isValid({})) -- "false"
+	```lua
+	print(LimitedTable.isValid(LimitedTable.new(512000))) --> true
+
+	print(LimitedTable.isValid({})) --> false
+	```
 ]]
 function LimitedTable.isValid(object: LimitedTable): boolean
 	return typeof(object) == "table" and getmetatable(object :: any) == LimitedTable
 end
 
 --[[
-	Checks if the given object is a valid LimitedTableTable created by this module
+	Checks if the given object is a valid LimitedTableTable by this module.
 	
 	Example:
-		print(LimitedTable.isValid(LimitedTable.new(512000))) -- "true"
-		print(LimitedTable.isValid({})) -- "false"
+	```lua
+	print(LimitedTable.isTable(LimitedTable.new(512000).table)) --> true
+	
+	print(LimitedTable.isTable({})) --> false
+	```
 ]]
 function LimitedTable.isTable(table: LimitedTableTable): boolean
 	return typeof(table) == "table" and getmetatable(table :: any) == tableMetatable
@@ -271,8 +275,11 @@ end
 	Returns the LimitedTable that the table belongs to, or nil if not found.
 
 	Example:
-		print(LimitedTable.getOwner(lt)) --> true
-		print(LimitedTable.getOwner({})) --> false
+	```lua
+	local lt = LimitedTable.new(512000)
+
+	print(LimitedTable.getOwner(lt.table) == lt) --> true
+	```
 ]]
 function LimitedTable.getOwner(table: LimitedTableTable): LimitedTable?
 	return objectsRegistry[table]
@@ -280,6 +287,17 @@ end
 
 --[[
 	Calculates and returns the size of given data.
+
+	If "recursive" is true and the "data" is a table
+	then it counts entries's size too.
+
+	Example:
+	```lua
+	print(LimitedTable.sizeOf("hi!")) --> 3
+
+	print(LimitedTable.sizeOf({ 1, 2, 3 })) --> 40
+	print(LimitedTable.sizeOf({ 1, 2, 3 }, true)) --> 88
+	```
 ]]
 function LimitedTable.sizeOf(data: any, recursive: boolean?): number
 	local size = calculateSize(data)
@@ -299,18 +317,24 @@ end
 	
 	Returns the size of the changes.
 
-	If "apply" is set to false, then it only returns the size difference,
-	without making any changes to the table.
+	If "apply" is set to false, then it only returns the
+	size difference without making any changes to the table.
 	
 	Example:
-		obj:set("a", "hi")
-		obj:set("myArray", {})
-		obj:set(1, "lol", lt.table.myArray)
-		obj:set("myArray", {
-		    "milk",
-		    "cheese",
-		    "pizza",
-		})
+	```lua
+	local lt = LimitedTable.new(512000)
+
+	lt:set("a", "hi")
+
+	lt:set("myArray", {})
+	lt:set(1, "lol", lt.table.myArray)
+	
+	lt:set("myArray", {
+		"milk",
+		"eggs",
+		"cheese",
+	})
+	```
 ]]
 function LimitedTable.set(
 	self: LimitedTable,
@@ -398,9 +422,18 @@ end
 	without making any changes to the table.
 
 	Example:
-		for i = 1, 10 do
-			obj:insert("Hello, world!", "myArray")
-		end
+	```lua
+	local lt = LimitedTable.new(512000)
+
+	for i = 1, 10 do
+		lt:insert("Hello, world!")
+	end
+	
+	lt:set("reversed", {})
+	for i = 10, 1, -1 do
+		lt:insert(i, lt.table.reversed, 1)
+	end
+	```
 ]]
 function LimitedTable.insert(
 	self: LimitedTable,
@@ -455,7 +488,7 @@ function LimitedTable.insert(
 end
 
 --[[
-	Remove entry at given "position" of "array".
+	Removes entry at given "position" from "array".
 
 	"array" defaults to self.table
 	"position" defaults to the end of the "array"
@@ -466,8 +499,19 @@ end
 	without making any changes to the table.
 
 	Example:
-		obj:remove(obj.table.myArray)
-		obj:remove(obj.table.myArray, 2")
+	```lua
+	local lt = LimitedTable.new(512000)
+	lt:set("myArray", {
+		"milk",
+		"eggs",
+		"cheese",
+	})
+
+	lt:remove(lt.table.myArray)
+	lt:remove(lt.table.myArray, 2)
+
+	print(lt.table.myArray) --> { "cheese" }
+	```
 ]]
 function LimitedTable.remove(
 	self: LimitedTable,
@@ -515,25 +559,20 @@ function LimitedTable.remove(
 end
 
 --[[
-	Returns a deep copy of given "table", with all limited tables replaced by normal ones.
-	"table" must belong to LimitedTable. set to LimitedTable.table by default.
+	Returns a deep copy of "table", with all
+	limited tables replaced by normal ones.
 	
-	You can do LimitedTable.cloneRaw(obj, ...) to increase speed in repetitive use cases.
+	"table" defaults to self.table
 	
 	Example:
-		-- example data
-		obj:set("a", 1)
-		obj:set("t", {
-		    a = "b",
-		    z = "4",
-		}
-		obj:set("r", {})
-		obj:set(1, obj.table.r, obj.table.r)
-		obj:set(2, obj.table, obj.table.r)
-		
-		print(obj:cloneRaw())
-		print(obj:cloneRaw(obj.table.t))
-		print(obj:cloneRaw(obj.table.r))
+	```lua
+	local lt = LimitedTable.new(512000)
+	lt:set("t", { 1, 2, 3 })
+	
+	local raw = lt:cloneRaw(lt.table.t)
+	print(raw) --> { 1, 2, 3 }
+	print(raw == lt.table.t) --> false
+	```
 ]]
 function LimitedTable.cloneRaw(self: LimitedTable, table: LimitedTableTable?): { [any]: any }
 	assert(self, 'must be called via ":" not ".", or provide LimitedTable')
@@ -554,23 +593,24 @@ function LimitedTable.cloneRaw(self: LimitedTable, table: LimitedTableTable?): {
 end
 
 --[[
-	Destroy given LimitedTable. Make sure to clear up references!
+	Destroy given LimitedTable
+	Make sure to clear up ALL references!
 	
 	Example:
-		local object = module.new(512000)
-		local table = nil
-		
-		local references = setmetatable(
-		    { object, table },
-		    { __mode = "v" }
-		)
-		
-		object:destroy()
-		object = nil
-		table = nil
-		
-		task.wait(2)
-		print(`destroyed: {#references == 0}!`)
+	```lua
+	local lt = LimitedTable.new(512000)
+
+	local references = setmetatable(
+		{ lt, lt.table },
+		{ __mode = "v" }
+	)
+	
+	lt:destroy()
+	lt = nil
+	
+	task.wait(5)
+	print(`deleted: {#references == 0}!`) --> true (unless something stupid happened)
+	```
 ]]
 function LimitedTable.destroy(self: LimitedTable): ()
 	assert(self, 'must be called via ":" not ".", or provide LimitedTable')
@@ -584,8 +624,8 @@ function LimitedTable.destroy(self: LimitedTable): ()
 end
 
 --[[
-	protection against modifying unknown properties in
-	LimitedTable object (not object.table)
+	protection against creating unknown properties
+	in LimitedTable class (not lt.table)
 ]]
 function LimitedTable.__newindex(_: LimitedTable, key: string): ()
 	error(

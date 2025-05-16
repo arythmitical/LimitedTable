@@ -17,7 +17,7 @@ Download the [latest .rbxm file](https://github.com/arythmitical/LimitedTable/re
 1. Add LimitedTable to dependencies in `wally.toml` inside your project:
 
     ```toml
-    limitedtable = "arythmitical/limitedtable@1.2.0"
+    limitedtable = "glitchymosh/limitedtable@1.2.0"
     ```
 
 2. Update dependencies using shell:

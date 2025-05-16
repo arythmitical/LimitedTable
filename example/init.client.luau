@@ -1,4 +1,5 @@
 --!strict
+
 --[[
 	Example of using LimitedTable.
 	The following code runs an interpreter which uses LimitedTable.

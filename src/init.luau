@@ -214,8 +214,13 @@ end
 	Example:
 	```lua
 	local lt = LimitedTable.new(512000)
+
 	lt.maximumSize += 64000
+
 	lt.sizeExceededMessage = "bum"
+	lt.sizeExceededMessage = function()
+		game.Players.LocalPlayer:Kick()
+	end
 	```
 ]]
 function LimitedTable.new(maximumSize: number, errorMessage: (string | () -> ())?): LimitedTable
@@ -249,7 +254,6 @@ end
 	Example:
 	```lua
 	print(LimitedTable.isValid(LimitedTable.new(512000))) --> true
-
 	print(LimitedTable.isValid({})) --> false
 	```
 ]]
@@ -258,12 +262,11 @@ function LimitedTable.isValid(object: LimitedTable): boolean
 end
 
 --[[
-	Checks if the given object is a valid LimitedTableTable by this module.
+	Checks if the given object is a valid LimitedTableTable from this module.
 	
 	Example:
 	```lua
 	print(LimitedTable.isTable(LimitedTable.new(512000).table)) --> true
-	
 	print(LimitedTable.isTable({})) --> false
 	```
 ]]
@@ -277,8 +280,10 @@ end
 	Example:
 	```lua
 	local lt = LimitedTable.new(512000)
-
 	print(LimitedTable.getOwner(lt.table) == lt) --> true
+	
+	local another = LimitedTable.new(512000)
+	print(LimitedTable.getOwner(lt.table) == another) --> false
 	```
 ]]
 function LimitedTable.getOwner(table: LimitedTableTable): LimitedTable?
@@ -507,10 +512,10 @@ end
 		"cheese",
 	})
 
-	lt:remove(lt.table.myArray)
-	lt:remove(lt.table.myArray, 2)
+	lt:remove(lt.table.myArray) -- remove last element
+	lt:remove(lt.table.myArray, 1)
 
-	print(lt.table.myArray) --> { "cheese" }
+	print(lt.table.myArray) --> { "eggs" }
 	```
 ]]
 function LimitedTable.remove(

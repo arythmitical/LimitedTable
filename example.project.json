@@ -3,6 +3,12 @@
   "tree": {
     "$className": "DataModel",
     "$ignoreUnknownInstances": true,
+    "Players": {
+      "$className": "Players",
+      "$properties": {
+        "CharacterAutoLoads": false
+      }
+    },
     "ReplicatedFirst": {
       "LimitedTableExample": {
         "$path": "example"

@@ -1,6 +1,6 @@
 [package]
-name = "glitchymosh/limitedtable"
-version = "1.2.0"
+name = "arythmitical/limitedtable"
+version = "2.0.0"
 description = "Constructor of Luau tables with size limits. Useful for interpreters, VMs and much more."
 registry = "https://github.com/UpliftGames/wally-index"
 license = "MIT"

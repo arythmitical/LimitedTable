@@ -18,18 +18,19 @@ LimitedTable.__index = LimitedTable
 	@prop contents { [any]: any }
 	@within LimitedTable
 
-	The real contents of LimitedTable.
+	The real contents of [LimitedTable](#).
 ]=]
 
 --[=[
 	@prop maximumSize number
 	@within LimitedTable
 
-	Determines the maximum allowed size of data inside LimitedTable, in bytes.
+	Determines the maximum allowed size of data inside
+	[LimitedTable](#), in bytes.
 
 	:::danger
-	Reducing the size of this property is dangerous. Make sure
-	the new size is not smaller than [`LimitedTable._currentSize`](#_currentSize).
+	Reducing the size of this property is dangerous. Make sure the new
+	size is not smaller than [`LimitedTable._currentSize`](#_currentSize).
 	:::
 ]=]
 
@@ -50,7 +51,7 @@ LimitedTable.__index = LimitedTable
 	@prop _currentSize number
 	@within LimitedTable
 
-	Determines the current size of the data inside the table.
+	Determines the current size of the data inside the [LimitedTable](#).
 ]=]
 
 --[=[
@@ -59,7 +60,7 @@ LimitedTable.__index = LimitedTable
 	@prop _attached { @metatable { __mode: "v" }, { LimitedTable } }
 	@within LimitedTable
 
-	Weak internal list of all attached LimitedTables, including self.
+	Weak internal list of all attached [LimitedTable](#)s, including self.
 ]=]
 
 export type LimitedTable = typeof(setmetatable(
@@ -74,7 +75,11 @@ export type LimitedTable = typeof(setmetatable(
 ))
 
 --[[
-	Tries to update size of LimitedTable and LimitedTables attached to it.
+	Tries to update size of LimitedTable
+	and LimitedTables attached to it.
+
+	It will fail if the size change will exceed the maximum
+	memory size of any of the LimitedTables.
 ]]
 local function tryUpdateSize(self: LimitedTable, delta: number): ()
 	local exceeds = false
@@ -392,7 +397,7 @@ function LimitedTable.deepCopy(self: LimitedTable): { [any]: any }
 end
 
 --[=[
-	Fully [detaches](#detachFromAll) & destroys the [LimitedTable](#).
+	Fully [detaches](#detachFromAll) & renders the [LimitedTable](#) unusable.
 	
 	:::warning
 	Make sure to delete _all_ references to LimitedTable,

@@ -1,0 +1,17 @@
+[docusaurus]
+tagline = "Constructor of Luau tables with size limits"
+
+[home]
+enabled = true
+
+[[home.features]]
+title = "Feature-rich and Versatile"
+description = "LimitedTable is a versatile module for creating tables with a total size limit, especially useful for things like interpreters or user input."
+
+[[home.features]]
+title = "Simple API"
+description = "LimitedTable's API is simple and straightforward. You can easily adapt your existing project to use LimitedTable."
+
+[[home.features]]
+title = "Blazing Fast"
+description = "LimitedTable was created with performance in mind, featuring speeds comparable to default tables."

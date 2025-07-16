@@ -1,45 +1,90 @@
---!strict
---!native
 --!optimize 2
+--!strict
 
+--!native
+
+local weak = { __mode = "v" }
+
+--[=[
+	Table with a total size limit.
+
+	@class LimitedTable
+]=]
 local LimitedTable = {}
 LimitedTable.__index = LimitedTable
 
--- in case developer was writing to table directly
-local newIndexWarningShown: boolean = false
+--[=[
+	@readonly
+	@prop contents { [any]: any }
+	@within LimitedTable
 
--- used for quickly referencing LimitedTable by its LimitedTable, without any complicated things
-local objectsRegistry = setmetatable(
+	The real contents of LimitedTable.
+]=]
+
+--[=[
+	@prop maximumSize number
+	@within LimitedTable
+
+	Determines the maximum allowed size of data inside LimitedTable, in bytes.
+
+	:::danger
+	Reducing the size of this property is dangerous. Make sure
+	the new size is not smaller than [`LimitedTable._currentSize`](#_currentSize).
+	:::
+]=]
+
+--[=[
+	@prop sizeLimitError string | () -> ()
+	@within LimitedTable
+
+	Determines the error message that will be raised when the
+	maximum size is exceeded. Alternatively, it can be a **function**
+	that will be invoked instead of raising an error.
+
+	Default: `maximum size of %s bytes exceeded`
+]=]
+
+--[=[
+	@private
+	@readonly
+	@prop _currentSize number
+	@within LimitedTable
+
+	Determines the current size of the data inside the table.
+]=]
+
+--[=[
+	@private
+	@readonly
+	@prop _attached { @metatable { __mode: "v" }, { LimitedTable } }
+	@within LimitedTable
+
+	Weak internal list of all attached LimitedTables, including self.
+]=]
+
+export type LimitedTable = typeof(setmetatable(
 	{} :: {
-		[LimitedTableTable]: LimitedTable?,
+		contents: { [any]: any },
+		maximumSize: number,
+		sizeLimitError: string | () -> (),
+		_currentSize: number,
+		_attached: typeof(setmetatable({} :: { LimitedTable }, weak)),
 	},
-	{
-		__mode = "kv", -- when objects are not referenced anywhere, they should get obliterated by GC
-	}
-)
-
--- used for checking reference amount to LimitedTableTable
-local objectsReferences = setmetatable(
-	{} :: {
-		[LimitedTableTable]: number,
-	},
-	{
-		__mode = "kv", -- when objects are not referenced anywhere, they should get obliterated by GC
-	}
-)
-
--- metatable for LimitedTable.table and tables inside it
-local tableMetatable = {}
+	LimitedTable
+))
 
 --[[
-	calculates the size of "data", without recursion.
-	not 100% accurate and never will. let's be honest about that.
+	Calculates the size of `data`. For objects,
+	returns their reference size.
+	
+	It may not be 100% accurate to the actual memory
+	size but i tried my best.
 ]]
 local function calculateSize(data: any): number
 	local type = type(data)
 
 	if type == "nil" then
-		return 0 -- does not exist at all
+		return 0 -- does not exist
 	elseif type == "string" then
 		return string.len(data)
 	elseif type == "number" then
@@ -57,451 +102,192 @@ local function calculateSize(data: any): number
 	elseif type == "buffer" then
 		return buffer.len(data)
 	else
-		warn(`{type} is not supported`) -- should not occur
+		warn(type .. " is not yet supported") -- should not occur unless a new type was added
 		return 0
 	end
 end
 
 --[[
-	attaches a metatable to the given table and calculates its initial size.
-	if additional tables were found, does the same thing for them.
-	
-	returns the calculated size of table.
+	Tries to update size of LimitedTable and LimitedTables attached to it.
 ]]
-local function transformTableRecursive(
-	data: { [any]: any },
-	object: LimitedTable,
-	calculated: { { [any]: any } }
-): number
-	table.insert(calculated, data)
+local function tryUpdateSize(self: LimitedTable, delta: number): ()
+	local exceeds = false
 
-	local currentSize = 0 -- header is already included from calculateSize()
-
-	setmetatable(data, tableMetatable)
-	objectsRegistry[data] = object
-	objectsReferences[data] = 1
-
-	for key, value in pairs(data) do
-		currentSize += 16 + calculateSize(key) + calculateSize(value) -- each entry takes up 16 bytes no matter what
-
-		if
-			typeof(value) == "table"
-			and objectsRegistry[value] == nil
-			and table.find(calculated, value) == nil
-		then
-			currentSize += transformTableRecursive(value, object, calculated)
+	if delta > 0 then
+		for _, attached: LimitedTable in ipairs(self._attached :: any) do
+			if attached._currentSize + delta > attached.maximumSize then
+				exceeds = true
+				break
+			end
 		end
 	end
 
-	return currentSize
+	if exceeds then
+		if typeof(self.sizeLimitError) == "function" then
+			self.sizeLimitError()
+		else
+			error(string.format(self.sizeLimitError, self.maximumSize), 3)
+		end
+	else
+		for _, attached: LimitedTable in ipairs(self._attached :: any) do
+			attached._currentSize += delta
+		end
+	end
 end
 
 --[[
-	returns a deep copy of "target", with all
-	LimitedTable tables replaced by normal tables.
+	Returns a deep copy of `target`, with all
+	LimitedTables turned into normal tables.
 ]]
-local function cloneTableRecursive<T>(
-	target: LimitedTableTable,
-	visited: { [LimitedTableTable]: T }
-): T
-	local cached: T? = visited[target]
+local function deepCopyTable(target: LimitedTable | { [any]: any }, visited)
+	local cached = visited[target]
 
-	if cached == nil then
-		type RawCloned = typeof(setmetatable(target :: any, nil)) -- typecast into any: deleting metatable
-		local clone: RawCloned = {}
-
-		visited[target] = clone
-
-		for key: any, value: any in pairs(target) do
-			if typeof(value) == "table" and getmetatable(value) == tableMetatable then
-				-- we remove only OUR size listeners
-				clone[key] = cloneTableRecursive(value, visited)
-			else
-				clone[key] = value
-			end
-		end
-
-		return clone
-	else
+	if cached ~= nil then
 		return cached
 	end
-end
 
---[[
-	frees the table out of LimitedTable and its listeners,
-	and returns the size it was taking.
+	local clone: typeof(table.clone(target.contents)) = {}
+	visited[target] = clone
 
-	if additional tables were found and they don't have any
-	references too, does the same thing for them.
-
-	the table can then be attached to another LimitedTable
-]]
-local function freeTableSizeRecursive(
-	target: LimitedTableTable,
-	calculated: { LimitedTableTable }
-): number
-	table.insert(calculated, target)
-
-	local currentSize = 0 -- header is already included from calculateSize()
-
-	objectsRegistry[target] = nil
-	objectsReferences[target] = nil
-
-	for key, value in pairs(target) do
-		currentSize += 16 + calculateSize(key) + calculateSize(value) -- each entry takes up 16 bytes no matter what
-
-		if
-			typeof(value) == "table"
-			and objectsReferences[value] == 1
-			and table.find(calculated, value) == nil
-		then -- only if referenced here
-			currentSize += freeTableSizeRecursive(value, calculated)
-		end
+	for key: any, value: any in
+		pairs(if getmetatable(target :: any) == LimitedTable then target.contents else target)
+	do
+		clone[key] = if typeof(value) == "table" then deepCopyTable(value, visited) else value
 	end
 
-	return currentSize
+	return clone
 end
 
---[[
-	clears and resets LimitedTable table.
-	if additional tables were found, does the same thing for them.
-]]
-local function wipeTableRecursive(target: LimitedTableTable, visited: { LimitedTableTable }): ()
-	if table.find(visited, target) == nil then
-		table.insert(visited, target)
+--[=[
+	Construct a new [LimitedTable](#).
 
-		setmetatable(target :: any, nil)
-
-		for key: any, value: any in pairs(target) do
-			if typeof(value) == "table" and getmetatable(value) == tableMetatable then
-				wipeTableRecursive(value, visited)
-			end
-			target[key] = nil
-		end
-	end
-end
-
---[[
-	DEPRECATED
-	__newindex is not invoked for entries that already exist.
-	
-	listens to changes and adjusts _currentSize.
-]]
-function tableMetatable.__newindex(self: LimitedTableTable, key: any, value: any): ()
-	if newIndexWarningShown == false then
-		warn(
-			"writing to table directly is not stable, use limitedTable:set() instead"
-				.. debug.traceback("came from:", 2)
-		)
-		newIndexWarningShown = true
-	end
-
-	local object: LimitedTable? = objectsRegistry[self] -- reference to LimitedTable
-	assert(object, "table does not belong to any LimitedTable")
-
-	object:set(key, value, self)
-end
-
---[[
-	Creates a new LimitedTable object with given size limit of "maximumSize".
-	When writing a value that exceeds total size, raises an error with "errorMessage".
-
-	"errorMessage" defaults to "maximum size of %s bytes exceeded"
-	
-	For getting, use LimitedTable.table like a normal table.
-	For setting, use LimitedTable:set(). Writing to LimitedTable.table is unstable.
-	
 	Example:
 	```lua
 	local lt = LimitedTable.new(512000)
-
+	
 	lt.maximumSize += 64000
-
-	lt.sizeExceededMessage = "bum"
-	lt.sizeExceededMessage = function()
+	
+	lt.sizeLimitError = "bum"
+	lt.sizeLimitError = function()
 		game.Players.LocalPlayer:Kick()
 	end
 	```
-]]
-function LimitedTable.new(maximumSize: number, errorMessage: (string | () -> ())?): LimitedTable
-	assert(typeof(maximumSize) == "number", "expected maximum size to be a number")
+
+	@param maximumSize number -- the maximum size of LimitedTable
+	@param sizeLimitError (string | () -> ())? -- error message/function (default: "maximum size of %s bytes exceeded")
+	@param attached { LimitedTable }? -- list of attached tables (default: {})
+]=]
+function LimitedTable.new(
+	maximumSize: number,
+	sizeLimitError: (string | () -> ())?,
+	attached: { LimitedTable }?
+): LimitedTable
+	assert(typeof(maximumSize) == "number", "expected argument #1 to be a number")
 	assert(
-		errorMessage == nil
-			or typeof(errorMessage) == "string"
-			or typeof(errorMessage) == "function",
-		"expected error message to be a string or a function"
+		sizeLimitError == nil
+			or typeof(sizeLimitError) == "string"
+			or typeof(sizeLimitError) == "function",
+		"expected argument #2 to be a string or a function"
 	)
+	assert(attached == nil or typeof(attached) == "table", "expected argument #3 to be a table")
 
 	local self = {}
-	self._currentSize = 0
+	self.contents = {}
 	self.maximumSize = maximumSize
-	self.sizeExceededMessage = errorMessage or "maximum size of %s bytes exceeded"
+	self.sizeLimitError = sizeLimitError or "maximum size of %s bytes exceeded"
+	self._currentSize = 0
+	self._attached = setmetatable(if attached ~= nil then table.clone(attached) else {}, weak)
 
-	local limitedTableTable = setmetatable({} :: { [any]: any }, tableMetatable)
-	self.table = limitedTableTable
+	table.insert(self._attached :: any, 1, self)
 
 	setmetatable(self, LimitedTable) -- setting last because of LimitedTable.__newindex
-
-	objectsRegistry[limitedTableTable] = self
-	objectsReferences[limitedTableTable] = 0 -- only references coming from LimitedTableTable are counted
 
 	return self
 end
 
---[[
-	Checks if the given object is a valid LimitedTable from this module.
+--[=[
+	Checks if the given `object` is a [LimitedTable](#) created by this libary.
 	
 	Example:
 	```lua
-	print(LimitedTable.isValid(LimitedTable.new(512000))) --> true
-	print(LimitedTable.isValid({})) --> false
+	print(LimitedTable.is(LimitedTable.new(512000))) --> true
+	print(LimitedTable.is({})) --> false
 	```
-]]
-function LimitedTable.isValid(object: LimitedTable): boolean
-	return typeof(object) == "table" and getmetatable(object :: any) == LimitedTable
+]=]
+function LimitedTable.is(object: LimitedTable): boolean
+	return typeof(object) == "table" and getmetatable(object) == LimitedTable
 end
 
---[[
-	Checks if the given object is a valid LimitedTableTable from this module.
-	
-	Example:
-	```lua
-	print(LimitedTable.isTable(LimitedTable.new(512000).table)) --> true
-	print(LimitedTable.isTable({})) --> false
-	```
-]]
-function LimitedTable.isTable(table: LimitedTableTable): boolean
-	return typeof(table) == "table" and getmetatable(table :: any) == tableMetatable
-end
-
---[[
-	Returns the LimitedTable that the table belongs to, or nil if not found.
-
-	Example:
-	```lua
-	local lt = LimitedTable.new(512000)
-	print(LimitedTable.getOwner(lt.table) == lt) --> true
-	
-	local another = LimitedTable.new(512000)
-	print(LimitedTable.getOwner(lt.table) == another) --> false
-	```
-]]
-function LimitedTable.getOwner(table: LimitedTableTable): LimitedTable?
-	return objectsRegistry[table]
-end
-
---[[
-	Calculates and returns the size of given data.
-
-	If "recursive" is true and the "data" is a table
-	then it counts entries's size too.
-
-	Example:
-	```lua
-	print(LimitedTable.sizeOf("hi!")) --> 3
-
-	print(LimitedTable.sizeOf({ 1, 2, 3 })) --> 40
-	print(LimitedTable.sizeOf({ 1, 2, 3 }, true)) --> 88
-	```
-]]
-function LimitedTable.sizeOf(data: any, recursive: boolean?): number
-	local size = calculateSize(data)
-
-	if typeof(data) == "table" and recursive == true then
-		for key, value in pairs(data) do
-			size += LimitedTable.sizeOf(key, recursive) + LimitedTable.sizeOf(value, recursive)
-		end
-	end
-
-	return size
-end
-
---[[
-	Sets "key" of given "table" to "value".
-	"table" defaults to self.table
-	
-	Returns the size of the changes.
-
-	If "apply" is set to false, then it only returns the
-	size difference without making any changes to the table.
+--[=[
+	Sets `key` of the [LimitedTable](#) to `value`.
 	
 	Example:
 	```lua
 	local lt = LimitedTable.new(512000)
 
 	lt:set("a", "hi")
+	lt:set(1, "lol")
 
-	lt:set("myArray", {})
-	lt:set(1, "lol", lt.table.myArray)
+	lt:set("myArray", { 1, 2, 3 })
 	
-	lt:set("myArray", {
-		"milk",
-		"eggs",
-		"cheese",
-	})
+	lt:set("myArray", LimitedTable.new(512000, nil, { lt }))
 	```
-]]
-function LimitedTable.set(
-	self: LimitedTable,
-	key: any,
-	value: any,
-	table: LimitedTableTable?,
-	apply: boolean?
-): number
-	assert(LimitedTable.isValid(self), 'must be called via ":" not ".", or provide LimitedTable')
+]=]
+function LimitedTable.set(self: LimitedTable, key: any, value: any): ()
+	assert(LimitedTable.is(self), 'must be called via ":" not ".", or provide LimitedTable')
 
-	local target: LimitedTableTable
+	local delta: number = 0
+	local oldValue: any = self.contents[key]
 
-	if table == nil then
-		target = self.table
-	else
-		assert(objectsRegistry[table] == self, "table is not attached to any LimitedTable")
-		target = table
-	end
+	delta += calculateSize(value) - calculateSize(oldValue) -- currentSize + delta
 
-	local newSize: number = 0
-	local oldValue: any = target[key]
-
-	newSize += calculateSize(value) - calculateSize(oldValue) -- currentSize + delta
-
-	-- entry does not exist if it is nil
 	if oldValue == nil then
-		newSize += calculateSize(key) + 16 -- 16 bytes overhead for each entry
+		-- entry did not exist
+		delta += calculateSize(key) + 16 -- 16 bytes overhead for each entry
 	end
 
 	if value == nil then
-		newSize -= calculateSize(key) + 16 -- 16 bytes overhead for each entry
+		-- entry is being deleted
+		delta -= calculateSize(key) + 16 -- 16 bytes overhead for each entry
 	end
 
-	if typeof(value) == "table" then
-		if objectsRegistry[value] == nil then
-			newSize += transformTableRecursive(value, self, {})
-		else
-			objectsReferences[value] += 1
-		end
-	end
-
-	if self._currentSize + newSize > self.maximumSize then
-		-- changes must be reverted
-		if typeof(value) == "table" then
-			objectsReferences[value] -= 1
-		end
-
-		if typeof(self.sizeExceededMessage) == "function" then
-			self.sizeExceededMessage(target)
-		else
-			error(string.format(self.sizeExceededMessage, self.maximumSize), 2)
-		end
-	end
-
-	-- table must change only if the size does not exceed
-
-	-- reducing size if the table is no longer referenced inside LimitedTable
-	-- past limit check because subtraction will never exceed size limit
-	if typeof(oldValue) == "table" then
-		-- oldValue is LimitedTableTable
-		objectsReferences[oldValue] -= 1
-
-		if objectsReferences[oldValue] == 0 then
-			newSize -= freeTableSizeRecursive(oldValue, {})
-		end
-	end
-
-	if apply ~= false then
-		self._currentSize += newSize
-		rawset(target :: any, key, value) -- typecasted into any because rawset type definition is incorrect
-	end
-
-	return newSize
+	tryUpdateSize(self, delta)
+	rawset(self.contents, key, value)
 end
 
---[[
-	Inserts "value" at given "position" of "array".
-
-	"array" defaults to self.table
-	"position" defaults to the end of the "array"
-
-	Returns the size of the changes.
-
-	If "apply" is set to false, then it only returns the size difference,
-	without making any changes to the table.
+--[=[
+	Inserts `value` at `position` of the [LimitedTable](#).
 
 	Example:
 	```lua
 	local lt = LimitedTable.new(512000)
 
 	for i = 1, 10 do
-		lt:insert("Hello, world!")
+		lt:insert(i)
 	end
-	
-	lt:set("reversed", {})
-	for i = 10, 1, -1 do
-		lt:insert(i, lt.table.reversed, 1)
-	end
+
+	print(lt.contents) --> { 1, 2, 3, ..., 10 }
 	```
-]]
-function LimitedTable.insert(
-	self: LimitedTable,
-	value: any,
-	array: LimitedTableTable?,
-	position: number?,
-	apply: boolean?
-): number
-	assert(LimitedTable.isValid(self), 'must be called via ":" not ".", or provide LimitedTable')
 
-	local target: LimitedTableTable
+	@param position number? -- (default: end of the array)
+]=]
+function LimitedTable.insert(self: LimitedTable, value: any, position: number?): ()
+	assert(LimitedTable.is(self), 'must be called via ":" not ".", or provide LimitedTable')
 
-	if array == nil then
-		target = self.table
-	else
-		assert(objectsRegistry[array] == self, "table is not attached to any LimitedTable")
-		target = array
-	end
-
-	local newSize: number = 0
 	if value ~= nil then -- inserting nil will only update keys, meaning there won't be size change
-		newSize += calculateSize(value) + 24 -- value size + key internal + number size
-
-		if typeof(value) == "table" then
-			if objectsRegistry[value] == nil then
-				newSize += transformTableRecursive(value, self, {})
-			else
-				objectsReferences[value] += 1
-			end
-		end
-
-		if self._currentSize + newSize > self.maximumSize then
-			if typeof(self.sizeExceededMessage) == "function" then
-				self.sizeExceededMessage(target)
-			else
-				error(string.format(self.sizeExceededMessage, self.maximumSize), 2)
-			end
-		end
+		tryUpdateSize(self, calculateSize(value) + 24) -- value size + key meta (16) + key size (8)
 	end
 
-	if apply ~= false then
-		self._currentSize += newSize
-
-		if position == nil then
-			table.insert(target :: any, value) -- table.insert bypasses metatables
-		else
-			table.insert(target :: any, position :: any, value)
-		end
+	if position == nil then
+		table.insert(self.contents, value) -- table.insert bypasses metatables
+	else
+		table.insert(self.contents, position, value)
 	end
-
-	return newSize
 end
 
---[[
-	Removes entry at given "position" from "array".
-
-	"array" defaults to self.table
-	"position" defaults to the end of the "array"
-
-	Returns the size of the changes.
-
-	If "apply" is set to false, then it only returns the size difference,
-	without making any changes to the table.
+--[=[
+	Removes the specified element at given `position` from [LimitedTable](#),
+	shifting later elements down to fill in the empty space if possible.
 
 	Example:
 	```lua
@@ -517,138 +303,192 @@ end
 
 	print(lt.table.myArray) --> { "eggs" }
 	```
-]]
-function LimitedTable.remove(
-	self: LimitedTable,
-	array: LimitedTableTable?,
-	position: number?,
-	apply: boolean?
-): number
-	assert(LimitedTable.isValid(self), 'must be called via ":" not ".", or provide LimitedTable')
 
-	local target: LimitedTableTable
+	@param position number? -- (default: end of the array)
+]=]
+function LimitedTable.remove(self: LimitedTable, position: number?): ()
+	assert(LimitedTable.is(self), 'must be called via ":" not ".", or provide LimitedTable')
 
-	if array == nil then
-		target = self.table
-	else
-		assert(objectsRegistry[array] == self, "table is not attached to any LimitedTable")
-		target = array
-	end
+	local contents = self.contents
 
-	local targetPos = position or #target
-	local targetValue = target[targetPos]
-
-	local newSize = 0
+	local targetValue = contents[position or table.maxn(contents)]
 	if targetValue ~= nil then
-		newSize -= calculateSize(targetValue) + 24 -- value size + key internal + number size
+		local delta = calculateSize(targetValue) + 24 -- value size + key meta (16) + key size (8)
 
-		-- reducing size if the table is no longer referenced inside LimitedTable
-		if typeof(targetValue) == "table" then
-			-- oldValue is LimitedTableTable
-			objectsReferences[targetValue] -= 1
-
-			if objectsReferences[targetValue] == 0 then
-				newSize -= freeTableSizeRecursive(targetValue, {})
-			end
+		-- tryUpdateSize is not used because subtraction will never exceed size limit
+		for _, attached: LimitedTable in ipairs(self._attached :: any) do
+			attached._currentSize -= delta
 		end
-
-		-- size check is not performed because we are only subtracting current size
 	end
 
-	if apply ~= false then
-		self._currentSize += newSize
-		table.remove(target :: any, targetPos) -- table.remove bypasses metatables
-	end
-
-	return newSize
+	table.remove(contents, position) -- table.remove bypasses metatables
 end
 
---[[
-	Returns a deep copy of "table", with all
-	limited tables replaced by normal ones.
+--[=[
+	Tries to attach the [LimitedTable](#) to another LimitedTable.
+	If the LimitedTable is already attached, does nothing.
+
+	:::danger
+	Because attaching a LimitedTable increases the size of the
+	second LimitedTable, **this function will error if doing so
+	will exceed second LimitedTable's limits.**
+	:::
 	
-	"table" defaults to self.table
+	:::tip
+	**Always** attach an empty LimitedTable or first check the
+	[`LimitedTable._currentSize`](#_currentSize) of _both_ LimitedTables.
+	:::
+
+	@param attachTo LimitedTable -- the LimitedTable to attach to
+]=]
+function LimitedTable.attachTo(self: LimitedTable, attachTo: LimitedTable): ()
+	assert(LimitedTable.is(self), 'must be called via ":" not ".", or provide LimitedTable')
+	assert(LimitedTable.is(attachTo), "expected argument #2 to be LimitedTable")
+
+	if table.find(self._attached :: any, attachTo) == nil then
+		tryUpdateSize(attachTo, self._currentSize)
+		table.insert(self._attached :: any, attachTo)
+	end
+end
+
+--[=[
+	Detaches the [LimitedTable](#) from another LimitedTable.
+	If the LimitedTable is not attached, does nothing.
+
+	:::note
+	Detaching from a LimitedTable reduces its size.
+	:::
+
+	@param detachFrom LimitedTable -- the LimitedTable to detach from
+]=]
+function LimitedTable.detachFrom(self: LimitedTable, detachFrom: LimitedTable): ()
+	assert(LimitedTable.is(self), 'must be called via ":" not ".", or provide LimitedTable')
+	assert(LimitedTable.is(detachFrom), "expected argument #2 to be LimitedTable")
+	assert(self ~= detachFrom, "argument #2 must not equal to self")
+
+	local pos = table.find(self._attached :: any, detachFrom)
+
+	if pos ~= nil then
+		table.remove(self._attached :: any, pos)
+		detachFrom._currentSize -= self._currentSize
+	end
+end
+
+--[=[
+	Detaches the [LimitedTable](#) from all attached LimitedTables.
+
+	:::note
+	Detaching from a LimitedTable reduces its size.
+	:::
+]=]
+function LimitedTable.detachFromAll(self: LimitedTable): ()
+	assert(LimitedTable.is(self), 'must be called via ":" not ".", or provide LimitedTable')
+
+	local size = self._currentSize
+	local attached = self._attached
+
+	while true do
+		local pos, detachFrom = next(attached, 1)
+
+		if pos == nil then
+			break
+		end
+
+		detachFrom._currentSize -= size
+		attached[pos] = nil
+	end
+end
+
+--[=[
+	Returns a __deep__ copy of [LimitedTable](#),
+	with all found metatables removed.
+	
+	:::tip
+	If you need a shallow copy, use [`table.clone(lt.contents)`](https://create.roblox.com/docs/reference/engine/libraries/table#clone).
+	:::
 	
 	Example:
 	```lua
 	local lt = LimitedTable.new(512000)
-	lt:set("t", { 1, 2, 3 })
-	
-	local raw = lt:cloneRaw(lt.table.t)
+	lt:insert(1)
+	lt:insert(2)
+	lt:insert(3)
+
+	local raw = lt:cloneRaw()
 	print(raw) --> { 1, 2, 3 }
-	print(raw == lt.table.t) --> false
+	print(raw == lt.contents) --> false
 	```
-]]
-function LimitedTable.cloneRaw(self: LimitedTable, table: LimitedTableTable?): { [any]: any }
-	assert(self, 'must be called via ":" not ".", or provide LimitedTable')
+]=]
+function LimitedTable.deepCopy(self: LimitedTable): { [any]: any }
+	assert(LimitedTable.is(self), 'must be called via ":" not ".", or provide LimitedTable')
 
-	local target: LimitedTableTable
-
-	if table == nil then
-		target = self.table
-	else
-		assert(
-			objectsRegistry[table] == self,
-			"table does not belong to LimitedTable, or is not a valid object at all"
-		)
-		target = table
-	end
-
-	return cloneTableRecursive(target, {})
+	return deepCopyTable(self, {})
 end
 
---[[
-	Destroy given LimitedTable
-	Make sure to clear up ALL references!
+--[=[
+	Fully [detaches](#detachFromAll) & destroys the [LimitedTable](#).
 	
+	:::warning
+	Make sure to delete _all_ references to LimitedTable,
+	otherwise it will stay in the memory forever!
+	:::
+
 	Example:
 	```lua
 	local lt = LimitedTable.new(512000)
 
 	local references = setmetatable(
-		{ lt, lt.table },
+		{ lt, lt.contents },
 		{ __mode = "v" }
 	)
 	
 	lt:destroy()
 	lt = nil
 	
-	task.wait(5)
-	print(`deleted: {#references == 0}!`) --> true (unless something stupid happened)
+	task.wait(8)
+	print(`deleted: {#references == 0}!`) --> true
 	```
-]]
+]=]
 function LimitedTable.destroy(self: LimitedTable): ()
-	assert(self, 'must be called via ":" not ".", or provide LimitedTable')
+	assert(LimitedTable.is(self), 'must be called via ":" not ".", or provide LimitedTable')
 
-	wipeTableRecursive(self.table, {})
+	self:detachFromAll()
+	table.clear(self.contents)
 
-	setmetatable(self :: any, nil)
 	table.clear(self :: any)
+	setmetatable(self :: any, nil)
+end
 
-	-- references from objectsRegistry are auto-removed because it is a weak table
+--[=[
+	Calculates the size of `data`. For objects,
+	returns their reference size.
+	
+	This is how [LimitedTable](#) calculates sizes.
+	It may not be 100% accurate to the actual memory
+	size but i tried my best.
+
+	Example:
+	```lua
+	print(LimitedTable.sizeOf("hi!")) --> 3
+	print(LimitedTable.sizeOf({})) --> 40
+	print(LimitedTable.sizeOf({ 1, 2, 3 })) --> 40
+	```
+]=]
+function LimitedTable.sizeOf(data: any): number
+	return calculateSize(data)
 end
 
 --[[
-	protection against creating unknown properties
-	in LimitedTable class (not lt.table)
+	Protection against creating unknown properties
+	in LimitedTable class (not LimitedTable.table).
 ]]
-function LimitedTable.__newindex(_: LimitedTable, key: string): ()
+function LimitedTable.__newindex(_, key: string): ()
 	error(
-		`attempt to set unknown key "{key}" of LimitedTable. did you mean to set key of LimitedTable.table?`,
+		'attempt to set unknown key "'
+			.. key
+			.. '" of LimitedTable. perhaps, you meant to use LimitedTable:set()',
 		2
 	)
 end
-
-export type LimitedTableTable = typeof(setmetatable({} :: { [any]: any }, tableMetatable))
-
-export type LimitedTable = typeof(setmetatable(
-	{} :: {
-		table: LimitedTableTable,
-		maximumSize: number,
-		_currentSize: number,
-		sizeExceededMessage: string | (table: LimitedTableTable) -> (),
-	},
-	LimitedTable
-))
 
 return table.freeze(LimitedTable)

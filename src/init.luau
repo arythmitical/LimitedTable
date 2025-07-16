@@ -74,40 +74,6 @@ export type LimitedTable = typeof(setmetatable(
 ))
 
 --[[
-	Calculates the size of `data`. For objects,
-	returns their reference size.
-	
-	It may not be 100% accurate to the actual memory
-	size but i tried my best.
-]]
-local function calculateSize(data: any): number
-	local type = type(data)
-
-	if type == "nil" then
-		return 0 -- does not exist
-	elseif type == "string" then
-		return string.len(data)
-	elseif type == "number" then
-		return 8 -- 64-bit double-precision floating-point number
-	elseif type == "boolean" then
-		return 1 -- true/false
-	elseif type == "table" then
-		return 40 -- reference size + headers
-	elseif type == "function" then
-		return 8 -- memory address
-	elseif type == "userdata" then
-		return 16 -- engine reference size, nothing else can be measured
-	elseif type == "vector" then
-		return 24 -- 3 numbers
-	elseif type == "buffer" then
-		return buffer.len(data)
-	else
-		warn(type .. " is not yet supported") -- should not occur unless a new type was added
-		return 0
-	end
-end
-
---[[
 	Tries to update size of LimitedTable and LimitedTables attached to it.
 ]]
 local function tryUpdateSize(self: LimitedTable, delta: number): ()
@@ -239,16 +205,16 @@ function LimitedTable.set(self: LimitedTable, key: any, value: any): ()
 	local delta: number = 0
 	local oldValue: any = self.contents[key]
 
-	delta += calculateSize(value) - calculateSize(oldValue) -- currentSize + delta
+	delta += LimitedTable.sizeOf(value) - LimitedTable.sizeOf(oldValue) -- currentSize + delta
 
 	if oldValue == nil then
 		-- entry did not exist
-		delta += calculateSize(key) + 16 -- 16 bytes overhead for each entry
+		delta += LimitedTable.sizeOf(key) + 16 -- 16 bytes overhead for each entry
 	end
 
 	if value == nil then
 		-- entry is being deleted
-		delta -= calculateSize(key) + 16 -- 16 bytes overhead for each entry
+		delta -= LimitedTable.sizeOf(key) + 16 -- 16 bytes overhead for each entry
 	end
 
 	tryUpdateSize(self, delta)
@@ -275,7 +241,7 @@ function LimitedTable.insert(self: LimitedTable, value: any, position: number?):
 	assert(LimitedTable.is(self), 'must be called via ":" not ".", or provide LimitedTable')
 
 	if value ~= nil then -- inserting nil will only update keys, meaning there won't be size change
-		tryUpdateSize(self, calculateSize(value) + 24) -- value size + key meta (16) + key size (8)
+		tryUpdateSize(self, LimitedTable.sizeOf(value) + 24) -- value size + key meta (16) + key size (8)
 	end
 
 	if position == nil then
@@ -313,7 +279,7 @@ function LimitedTable.remove(self: LimitedTable, position: number?): ()
 
 	local targetValue = contents[position or table.maxn(contents)]
 	if targetValue ~= nil then
-		local delta = calculateSize(targetValue) + 24 -- value size + key meta (16) + key size (8)
+		local delta = LimitedTable.sizeOf(targetValue) + 24 -- value size + key meta (16) + key size (8)
 
 		-- tryUpdateSize is not used because subtraction will never exceed size limit
 		for _, attached: LimitedTable in ipairs(self._attached :: any) do
@@ -475,7 +441,30 @@ end
 	```
 ]=]
 function LimitedTable.sizeOf(data: any): number
-	return calculateSize(data)
+	local type = type(data)
+
+	if type == "nil" then
+		return 0 -- does not exist
+	elseif type == "string" then
+		return string.len(data)
+	elseif type == "number" then
+		return 8 -- 64-bit double-precision floating-point number
+	elseif type == "boolean" then
+		return 1 -- true/false
+	elseif type == "table" then
+		return 40 -- reference size + headers
+	elseif type == "function" then
+		return 8 -- memory address
+	elseif type == "userdata" then
+		return 16 -- engine reference size, nothing else can be measured
+	elseif type == "vector" then
+		return 24 -- 3 numbers
+	elseif type == "buffer" then
+		return buffer.len(data)
+	else
+		warn(type .. " is not yet supported") -- should not occur unless a new type was added
+		return 0
+	end
 end
 
 --[[

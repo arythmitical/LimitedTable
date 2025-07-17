@@ -144,9 +144,9 @@ end
 	end
 	```
 
-	@param maximumSize number -- the maximum size of LimitedTable
+	@param maximumSize number
 	@param sizeLimitError (string | () -> ())? -- error message/function (default: "maximum size of %s bytes exceeded")
-	@param attached { LimitedTable }? -- list of attached tables (default: {})
+	@param attached { LimitedTable }? -- array of attached LimitedTables (default: {})
 ]=]
 function LimitedTable.new(
 	maximumSize: number,
@@ -293,6 +293,16 @@ function LimitedTable.remove(self: LimitedTable, position: number?): ()
 	end
 
 	table.remove(contents, position) -- table.remove bypasses metatables
+end
+
+--[=[
+	Sets all keys in the [LimitedTable](#) to nil.
+]=]
+function LimitedTable.clear(self: LimitedTable): ()
+	assert(LimitedTable.is(self), 'must be called via ":" not ".", or provide LimitedTable')
+
+	tryUpdateSize(self, -self._currentSize)
+	table.clear(self.contents) -- table.clear bypasses metatables
 end
 
 --[=[

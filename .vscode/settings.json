@@ -1,5 +1,4 @@
 {
-	"luau-lsp.plugin.maximumRequestBodySize": "5mb",
 	"[luau]": {
 		"editor.insertSpaces": false,
 		"editor.defaultFormatter": "JohnnyMorganz.stylua",
@@ -11,6 +10,7 @@
 		"editor.unicodeHighlight.ambiguousCharacters": false,
 		"editor.unicodeHighlight.invisibleCharacters": false,
 	},
+	"luau-lsp.sourcemap.enabled": true,
 	"luau-lsp.sourcemap.autogenerate": true,
 	"luau-lsp.sourcemap.rojoProjectFile": "example.project.json",
 	"luau-lsp.sourcemap.useVSCodeWatcher": true,

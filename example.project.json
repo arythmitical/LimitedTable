@@ -10,7 +10,7 @@
       }
     },
     "ReplicatedFirst": {
-      "LimitedTableExample": {
+      "Example": {
         "$path": "example"
       }
     },

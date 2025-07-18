@@ -1,12 +1,12 @@
-[docusaurus]
-tagline = "Constructor of Luau tables with size limits"
-url = "https://arythmitical.github.io"
-baseUrl = "/LimitedTable"
+gitSourceBranch = "main"
 
 [home]
 enabled = true
 
-gitSourceBranch = "main"
+[docusaurus]
+tagline = "Constructor of Luau tables with size limits"
+url = "https://arythmitical.github.io"
+# baseUrl = "/LimitedTable/"
 
 [[home.features]]
 title = "Feature-rich and Versatile"

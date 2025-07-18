@@ -18,7 +18,7 @@ LimitedTable.__index = LimitedTable
 	@prop contents { [any]: any }
 	@within LimitedTable
 
-	The real contents of [LimitedTable](#).
+	Real contents of [LimitedTable](#).
 ]=]
 
 --[=[
@@ -135,32 +135,26 @@ end
 	Example:
 	```lua
 	local lt = LimitedTable.new(512000)
-	
-	lt.maximumSize += 64000
-	
-	lt.sizeLimitError = "bum"
-	lt.sizeLimitError = function()
-		game.Players.LocalPlayer:Kick()
 	end
 	```
 
 	@param maximumSize number
-	@param sizeLimitError (string | () -> ())? -- error message/function (default: "maximum size of %s bytes exceeded")
 	@param attached { LimitedTable }? -- array of attached LimitedTables (default: {})
+	@param sizeLimitError (string | () -> ())? -- error message/function (default: "maximum size of %s bytes exceeded")
 ]=]
 function LimitedTable.new(
 	maximumSize: number,
-	sizeLimitError: (string | () -> ())?,
-	attached: { LimitedTable }?
+	attached: { LimitedTable }?,
+	sizeLimitError: (string | () -> ())?
 ): LimitedTable
 	assert(typeof(maximumSize) == "number", "expected argument #1 to be a number")
+	assert(attached == nil or typeof(attached) == "table", "expected argument #2 to be a table")
 	assert(
 		sizeLimitError == nil
 			or typeof(sizeLimitError) == "string"
 			or typeof(sizeLimitError) == "function",
-		"expected argument #2 to be a string or a function"
+		"expected argument #3 to be a string or a function"
 	)
-	assert(attached == nil or typeof(attached) == "table", "expected argument #3 to be a table")
 
 	local self = {}
 	self.contents = {}
@@ -185,12 +179,12 @@ end
 	print(LimitedTable.is({})) --> false
 	```
 ]=]
-function LimitedTable.is(object: LimitedTable): boolean
+function LimitedTable.is(object: any): boolean
 	return typeof(object) == "table" and getmetatable(object) == LimitedTable
 end
 
 --[=[
-	Sets `key` of the [LimitedTable](#) to `value`.
+	Sets `key` of the [LimitedTable](#) to `value` and returns the previous value.
 	
 	Example:
 	```lua
@@ -204,13 +198,11 @@ end
 	lt:set("myArray", LimitedTable.new(512000, nil, { lt }))
 	```
 ]=]
-function LimitedTable.set(self: LimitedTable, key: any, value: any): ()
+function LimitedTable.set(self: LimitedTable, key: any, value: any): any
 	assert(LimitedTable.is(self), 'must be called via ":" not ".", or provide LimitedTable')
 
-	local delta: number = 0
 	local oldValue: any = self.contents[key]
-
-	delta += LimitedTable.sizeOf(value) - LimitedTable.sizeOf(oldValue) -- currentSize + delta
+	local delta: number = LimitedTable.sizeOf(value) - LimitedTable.sizeOf(oldValue)
 
 	if oldValue == nil then
 		-- entry did not exist
@@ -224,6 +216,8 @@ function LimitedTable.set(self: LimitedTable, key: any, value: any): ()
 
 	tryUpdateSize(self, delta)
 	rawset(self.contents, key, value)
+
+	return oldValue
 end
 
 --[=[
@@ -259,6 +253,7 @@ end
 --[=[
 	Removes the specified element at given `position` from [LimitedTable](#),
 	shifting later elements down to fill in the empty space if possible.
+	Returns the removed element.
 
 	Example:
 	```lua
@@ -293,6 +288,8 @@ function LimitedTable.remove(self: LimitedTable, position: number?): ()
 	end
 
 	table.remove(contents, position) -- table.remove bypasses metatables
+
+	return targetValue
 end
 
 --[=[
@@ -385,7 +382,8 @@ end
 	with all found metatables removed.
 	
 	:::tip
-	If you need a shallow copy, use [`table.clone(lt.contents)`](https://create.roblox.com/docs/reference/engine/libraries/table#clone).
+	If you need a shallow copy, use
+	[`table.clone(lt.contents)`](https://create.roblox.com/docs/reference/engine/libraries/table#clone).
 	:::
 	
 	Example:
@@ -477,14 +475,14 @@ function LimitedTable.sizeOf(data: any): number
 	elseif type == "buffer" then
 		return buffer.len(data)
 	else
-		warn(type .. " is not yet supported") -- should not occur unless a new type was added
+		warn(type .. " is not yet supported") -- should not occur unless a new built-in type was added
 		return 0
 	end
 end
 
 --[[
 	Protection against creating unknown properties
-	in LimitedTable class (not LimitedTable.table).
+	in LimitedTable class (not LimitedTable.contents).
 ]]
 function LimitedTable.__newindex(_, key: string): ()
 	error(

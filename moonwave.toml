@@ -7,6 +7,7 @@ enabled = true
 tagline = "Constructor of Luau tables with size limits"
 url = "https://arythmitical.github.io"
 # baseUrl = "/LimitedTable/"
+onBrokenLinks = "log"
 
 [[home.features]]
 title = "Feature-rich and Versatile"

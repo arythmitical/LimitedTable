@@ -8,3 +8,6 @@
 
 # Rojo sourcemap file
 /sourcemap.json
+
+# Build dir
+build

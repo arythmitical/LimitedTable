@@ -1,7 +1,7 @@
 [docusaurus]
 tagline = "Constructor of Luau tables with size limits"
 url = "https://arythmitical.github.io"
-baseUrl = "/LimitedTable"
+baseUrl = "/"
 
 [home]
 enabled = true

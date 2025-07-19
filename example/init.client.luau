@@ -6,7 +6,7 @@
 	Supports local scope for variables.
 ]]
 
-local HttpService = game:GetService("HttpService") -- for the interpreter
+local HttpService = game:GetService("HttpService") -- for JSON stuff
 
 local LimitedTable = require(game:GetService("ReplicatedStorage"):WaitForChild("LimitedTable"))
 

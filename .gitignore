@@ -9,5 +9,6 @@
 # Rojo sourcemap file
 /sourcemap.json
 
-# Build dir
+# Build & Tests
 build
+tests

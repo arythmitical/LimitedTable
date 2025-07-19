@@ -59,6 +59,7 @@ LimitedTable.__index = LimitedTable
 	@readonly
 	@prop _attached { @metatable { __mode: "v" }, { LimitedTable } }
 	@within LimitedTable
+	@since 2.0.0
 
 	Weak internal list of all attached [LimitedTable](#)s, including self.
 ]=]
@@ -108,13 +109,12 @@ end
 
 --[[
 	Returns a deep copy of `target`, with all
-	LimitedTables turned into normal tables.
+	LimitedTables turned into normal tables
+	and all found metatables removed.
 ]]
 local function deepCopyTable(target: LimitedTable | { [any]: any }, visited)
-	local cached = visited[target]
-
-	if cached ~= nil then
-		return cached
+	if visited[target] ~= nil then
+		return visited[target]
 	end
 
 	local clone: typeof(table.clone(target.contents)) = {}
@@ -134,8 +134,7 @@ end
 
 	Example:
 	```lua
-	local lt = LimitedTable.new(512000)
-	end
+	local lt = LimitedTable.new(1024 * 1000)
 	```
 
 	@param maximumSize number
@@ -171,11 +170,65 @@ function LimitedTable.new(
 end
 
 --[=[
+	Construct a new [LimitedTable](#) from a
+	shallow copy of given `original` table.
+
+	Example:
+	```lua
+	local lt = LimitedTable.convert({ 1, 2, 3, 4, 5 }, 1024 * 1000)
+	print(lt.contents) --> { 1, 2, 3, 4, 5 }
+	```
+
+	@since 2.0.0
+	@param original { [any]: any } -- the original table to copy
+	@param maximumSize number
+	@param attached { LimitedTable }? -- array of attached LimitedTables (default: {})
+	@param sizeLimitError (string | () -> ())? -- error message/function (default: "maximum size of %s bytes exceeded")
+]=]
+function LimitedTable.convert(
+	original: { [any]: any },
+	maximumSize: number,
+	attached: { LimitedTable }?,
+	sizeLimitError: (string | () -> ())?
+): LimitedTable
+	assert(typeof(original) == "table", "expected argument #1 to be a table")
+	assert(typeof(maximumSize) == "number", "expected argument #2 to be a number")
+	assert(attached == nil or typeof(attached) == "table", "expected argument #3 to be a table")
+	assert(
+		sizeLimitError == nil
+			or typeof(sizeLimitError) == "string"
+			or typeof(sizeLimitError) == "function",
+		"expected argument #4 to be a string or a function"
+	)
+
+	local size = 0
+
+	for key, value in pairs(original) do
+		size += 16 + LimitedTable.sizeOf(key) + LimitedTable.sizeOf(value)
+	end
+
+	local self = {}
+	self.contents = table.clone(original)
+	self.maximumSize = maximumSize
+	self.sizeLimitError = sizeLimitError or "maximum size of %s bytes exceeded"
+	self._currentSize = 0
+	self._attached = setmetatable(if attached ~= nil then table.clone(attached) else {}, weak)
+
+	table.insert(self._attached :: any, 1, self)
+
+	setmetatable(self, LimitedTable) -- setting last because of LimitedTable.__newindex
+
+	tryUpdateSize(self, size)
+
+	return self
+end
+
+--[=[
 	Checks if the given `object` is a [LimitedTable](#) created by this libary.
 	
 	Example:
 	```lua
-	print(LimitedTable.is(LimitedTable.new(512000))) --> true
+	print(LimitedTable.is(LimitedTable.new(1024 * 1000))) --> true
 	print(LimitedTable.is({})) --> false
 	```
 ]=]
@@ -188,14 +241,14 @@ end
 	
 	Example:
 	```lua
-	local lt = LimitedTable.new(512000)
+	local lt = LimitedTable.new(1024 * 1000)
 
 	lt:set("a", "hi")
 	lt:set(1, "lol")
 
 	lt:set("myArray", { 1, 2, 3 })
 	
-	lt:set("myArray", LimitedTable.new(512000, nil, { lt }))
+	lt:set("myArray", LimitedTable.new(1024 * 1000, nil, { lt }))
 	```
 ]=]
 function LimitedTable.set(self: LimitedTable, key: any, value: any): any
@@ -215,7 +268,7 @@ function LimitedTable.set(self: LimitedTable, key: any, value: any): any
 	end
 
 	tryUpdateSize(self, delta)
-	rawset(self.contents, key, value)
+	self.contents[key] = value
 
 	return oldValue
 end
@@ -225,7 +278,7 @@ end
 
 	Example:
 	```lua
-	local lt = LimitedTable.new(512000)
+	local lt = LimitedTable.new(1024 * 1000)
 
 	for i = 1, 10 do
 		lt:insert(i)
@@ -244,7 +297,7 @@ function LimitedTable.insert(self: LimitedTable, value: any, position: number?):
 	end
 
 	if position == nil then
-		table.insert(self.contents, value) -- table.insert bypasses metatables
+		table.insert(self.contents, value)
 	else
 		table.insert(self.contents, position, value)
 	end
@@ -257,7 +310,7 @@ end
 
 	Example:
 	```lua
-	local lt = LimitedTable.new(512000)
+	local lt = LimitedTable.new(1024 * 1000)
 	lt:set("myArray", {
 		"milk",
 		"eggs",
@@ -287,19 +340,28 @@ function LimitedTable.remove(self: LimitedTable, position: number?): ()
 		end
 	end
 
-	table.remove(contents, position) -- table.remove bypasses metatables
+	table.remove(contents, position)
 
 	return targetValue
 end
 
 --[=[
 	Sets all keys in the [LimitedTable](#) to nil.
+
+	Example:
+	```lua
+	print(lt.contents) --> { 1, 2, 3, 4, 5 }
+	lt:clear()
+	print(lt.contents) --> {}
+	```
+
+	@since 2.0.0
 ]=]
 function LimitedTable.clear(self: LimitedTable): ()
 	assert(LimitedTable.is(self), 'must be called via ":" not ".", or provide LimitedTable')
 
 	tryUpdateSize(self, -self._currentSize)
-	table.clear(self.contents) -- table.clear bypasses metatables
+	table.clear(self.contents)
 end
 
 --[=[
@@ -317,6 +379,18 @@ end
 	[`LimitedTable._currentSize`](#_currentSize) of _both_ LimitedTables.
 	:::
 
+	[**Learn more**](../../docs/What_Is_Attaching)
+
+	Example:
+	```lua
+	local parent = LimitedTable.new(1024 * 1000)
+	local child = LimitedTable.new(1024 * 1000)
+	
+	child:attachTo(parent)
+	parent:insert(child)
+	```
+
+	@since 2.0.0
 	@param attachTo LimitedTable -- the LimitedTable to attach to
 ]=]
 function LimitedTable.attachTo(self: LimitedTable, attachTo: LimitedTable): ()
@@ -337,6 +411,15 @@ end
 	Detaching from a LimitedTable reduces its size.
 	:::
 
+	[**Learn more**](../../docs/What_Is_Attaching)
+
+	Example:
+	```lua
+	parent:remove(1) -- removes child
+	child:detachFrom(parent)
+	```
+
+	@since 2.0.0
 	@param detachFrom LimitedTable -- the LimitedTable to detach from
 ]=]
 function LimitedTable.detachFrom(self: LimitedTable, detachFrom: LimitedTable): ()
@@ -358,6 +441,15 @@ end
 	:::note
 	Detaching from a LimitedTable reduces its size.
 	:::
+
+	[**Learn more**](../../docs/What_Is_Attaching)
+
+	Example:
+	```lua
+	child:detachFromAll()
+	```
+
+	@since 2.0.0
 ]=]
 function LimitedTable.detachFromAll(self: LimitedTable): ()
 	assert(LimitedTable.is(self), 'must be called via ":" not ".", or provide LimitedTable')
@@ -379,7 +471,8 @@ end
 
 --[=[
 	Returns a __deep__ copy of [LimitedTable](#),
-	with all found metatables removed.
+	with all LimitedTables turned into normal tables
+	and all found metatables removed.
 	
 	:::tip
 	If you need a shallow copy, use
@@ -388,12 +481,12 @@ end
 	
 	Example:
 	```lua
-	local lt = LimitedTable.new(512000)
+	local lt = LimitedTable.new(1024 * 1000)
 	lt:insert(1)
 	lt:insert(2)
 	lt:insert(3)
 
-	local raw = lt:cloneRaw()
+	local raw = lt:deepCopy()
 	print(raw) --> { 1, 2, 3 }
 	print(raw == lt.contents) --> false
 	```
@@ -414,7 +507,7 @@ end
 
 	Example:
 	```lua
-	local lt = LimitedTable.new(512000)
+	local lt = LimitedTable.new(1024 * 1000)
 
 	local references = setmetatable(
 		{ lt, lt.contents },

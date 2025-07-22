@@ -148,10 +148,11 @@ function Function.runAsync(self: Function): ()
 			print(message)
 		elseif operation.type == "NEWTABLE" then
 			local variable, scope = getVariableScope(operation.variable)
-			local new = LimitedTable.new(localEnv.maximumSize, { globalEnv })
 
-			scope:set(variable, new)
-			referencesCount[new] = 1
+			local new = LimitedTable.new(localEnv.maximumSize, { globalEnv })
+			referencesCount[new] = 0
+
+			set(scope, variable, new)
 		elseif operation.type == "SETENTRY" then
 			local variable, scope = getVariableScope(operation.variable)
 			local data: any = scope.contents[variable]

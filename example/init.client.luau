@@ -96,7 +96,7 @@ function Function.runAsync(self: Function): ()
 
 		for _, value in pairs(lt.contents) do
 			if LimitedTable.is(value) then
-				referencesCount[oldVal] -= 1
+				referencesCount[value] -= 1
 				if referencesCount[value] == 0 then
 					destroy(lt, visited)
 				end
@@ -113,6 +113,7 @@ function Function.runAsync(self: Function): ()
 	]]
 	local function set(lt: LimitedTable.LimitedTable, key, value): ()
 		local oldVal = lt:set(key, value)
+
 		if LimitedTable.is(oldVal) then
 			referencesCount[oldVal] -= 1
 			if referencesCount[oldVal] == 0 then

@@ -95,10 +95,14 @@ function Function.runAsync(self: Function): ()
 		table.insert(visited, lt)
 
 		for _, value in pairs(lt.contents) do
-			if LimitedTable.is(value) and referencesCount[value] == 1 then
-				destroy(lt, visited)
+			if LimitedTable.is(value) then
+				referencesCount[oldVal] -= 1
+				if referencesCount[value] == 0 then
+					destroy(lt, visited)
+				end
 			end
 		end
+
 		referencesCount[lt] = nil
 		lt:destroy()
 	end
